@@ -429,7 +429,7 @@ print_nodes() {
   local HP="$6"       # HY2 port
   local INS="$7"      # insecure 0/1
 
-  local VLESS_URI_LOCAL="vless://$UUID@$HOST_BR:$VP?encryption=none&security=tls&sni=$DOMAIN&type=tcp#VLESS-TLS-${TAG}-${HOST_RAW}"
+  local VLESS_URI_LOCAL="vless://$UUID@$HOST_BR:$VP?encryption=none&security=tls&sni=$DOMAIN&allowInsecure=$INS&type=tcp#VLESS-TLS-${TAG}-${HOST_RAW}"
   local VLESS_REALITY_URI_LOCAL="vless://$UUID@$HOST_BR:$RP?encryption=none&security=reality&sni=$REALITY_SNI&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&type=tcp&flow=xtls-rprx-vision#VLESS-REALITY-${TAG}-${HOST_RAW}"
   local HY2_URI_LOCAL="hysteria2://$HY2_PASS@$HOST_BR:$HP?insecure=$INS&sni=$DOMAIN#HY2-${TAG}-${HOST_RAW}"
 
