@@ -13,7 +13,7 @@
 #    - v6.gh-proxy
 #    - mirror.ghproxy
 #    - github.com 直连
-# 2) 三个都失败：回退从你们仓库 raw 下载内核：
+# 2) 三个都失败：回退从仓库 raw 下载内核：
 #    https://raw.githubusercontent.com/hooghub/singboxversion/main/bin/sing-box-linux-{amd64|arm64}
 #
 # 注意：
