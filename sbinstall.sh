@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sing-box 一键部署脚本（最终版 V3 / IPv6-only 友好 / 外部源失败自动回退仓库内核）
+# Sing-box 一键部署脚本（最终版 V5 / IPv6-only 友好 / 外部源失败自动回退仓库内核 / 订阅分组注释）
 # 支持：
 # 1) 域名 + Let's Encrypt（acme.sh standalone）
 # 2) 公网 IP + 自签固定域名 www.epple.com
@@ -9,12 +9,23 @@
 # - Hysteria2 (UDP)
 #
 # sing-box 安装策略：
-# 1) 依次尝试外部 3 源：
-#    - v6.gh-proxy
-#    - mirror.ghproxy
+# 1) 外部 3 源依次尝试（v6优先，失败回退v4）：
+#    - v6.gh-proxy.org
+#    - mirror.ghproxy.com
 #    - github.com 直连
-# 2) 三个都失败：回退从仓库 raw 下载内核：
+# 2) 三个都失败：回退从你们仓库 raw 下载内核：
 #    https://raw.githubusercontent.com/hooghub/singboxversion/main/bin/sing-box-linux-{amd64|arm64}
+#
+# 节点输出策略：
+# - 模式2：有 IPv4 输出 IPv4；有 IPv6 输出 IPv6；都有就都输出；都没有则报错
+# - 模式1：由于 v4/v6 端口不同，输出两套（同域名不同端口）
+#
+# 订阅文件策略（V5 新增）：
+# - 订阅文件 /root/singbox_nodes.txt 按组写入，并加入注释分隔：
+#   # ===== V4 =====
+#   ...
+#   # ===== V6 =====
+# - 模式2：保证先 IPv4 后 IPv6（如果存在）
 #
 # 注意：
 # - 模式2自签：客户端需要允许不校验证书（insecure）
@@ -252,6 +263,7 @@ read -rp "请输入 VLESS REALITY 端口 (默认 0 随机): " VLESS_R_PORT
 read -rp "请输入 Hysteria2 UDP 端口 (默认 8443, 输入0随机): " HY2_PORT
 [[ -z "${HY2_PORT:-}" || "$HY2_PORT" == "0" ]] && HY2_PORT=$(get_random_port)
 
+# IPv6 端口（独立）
 VLESS6_PORT=$(get_random_port)
 VLESS_R6_PORT=$(get_random_port)
 HY2_6_PORT=$(get_random_port)
@@ -404,47 +416,68 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
-# --------- 生成节点 URI ---------
+# --------- 生成节点 URI（按实际拥有的 IP 输出：有啥输出啥） ---------
+SUB_FILE="/root/singbox_nodes.txt"
+: > "$SUB_FILE"
+
+print_nodes() {
+  local TAG="$1"      # V4 / V6 / DOMAIN-V4PORT / DOMAIN-V6PORT
+  local HOST_RAW="$2" # 纯 host（IPv6 不带[]）
+  local HOST_BR="$3"  # 用于 URI 的 host（IPv6 带[]）
+  local VP="$4"       # VLESS-TLS port
+  local RP="$5"       # VLESS-REALITY port
+  local HP="$6"       # HY2 port
+  local INS="$7"      # insecure 0/1
+
+  local VLESS_URI_LOCAL="vless://$UUID@$HOST_BR:$VP?encryption=none&security=tls&sni=$DOMAIN&type=tcp#VLESS-TLS-${TAG}-${HOST_RAW}"
+  local VLESS_REALITY_URI_LOCAL="vless://$UUID@$HOST_BR:$RP?encryption=none&security=reality&sni=$REALITY_SNI&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&type=tcp&flow=xtls-rprx-vision#VLESS-REALITY-${TAG}-${HOST_RAW}"
+  local HY2_URI_LOCAL="hysteria2://$HY2_PASS@$HOST_BR:$HP?insecure=$INS&sni=$DOMAIN#HY2-${TAG}-${HOST_RAW}"
+
+  log "\n=================== [$TAG] VLESS-TLS ==================="
+  echo "$VLESS_URI_LOCAL"
+  command -v qrencode >/dev/null 2>&1 && echo "$VLESS_URI_LOCAL" | qrencode -t ansiutf8 || true
+
+  log "\n=================== [$TAG] VLESS-REALITY ==================="
+  echo "$VLESS_REALITY_URI_LOCAL"
+  command -v qrencode >/dev/null 2>&1 && echo "$VLESS_REALITY_URI_LOCAL" | qrencode -t ansiutf8 || true
+
+  log "\n=================== [$TAG] Hysteria2 ==================="
+  echo "$HY2_URI_LOCAL"
+  command -v qrencode >/dev/null 2>&1 && echo "$HY2_URI_LOCAL" | qrencode -t ansiutf8 || true
+
+  # V5：订阅文件分组注释（追加写入）
+  {
+    echo ""
+    echo "# ===== ${TAG} ====="
+    echo "$VLESS_URI_LOCAL"
+    echo "$VLESS_REALITY_URI_LOCAL"
+    echo "$HY2_URI_LOCAL"
+  } >> "$SUB_FILE"
+}
+
 if [[ "$MODE" == "1" ]]; then
-  NODE_HOST="$DOMAIN"
-  NODE_HOST_BR="$DOMAIN"
-  INSECURE="0"
+  # 域名模式：insecure=0，但因为 v4/v6 端口不同，输出两套端口链接（先 v4port 后 v6port）
+  print_nodes "DOMAIN-V4PORT" "$DOMAIN" "$DOMAIN" "$VLESS_PORT" "$VLESS_R_PORT" "$HY2_PORT" "0"
+  print_nodes "DOMAIN-V6PORT" "$DOMAIN" "$DOMAIN" "$VLESS6_PORT" "$VLESS_R6_PORT" "$HY2_6_PORT" "0"
 else
-  if [[ -n "$SERVER_IPV6" ]]; then
-    NODE_HOST="$SERVER_IPV6"
-    NODE_HOST_BR="[$SERVER_IPV6]"
-  elif [[ -n "$SERVER_IPV4" ]]; then
-    NODE_HOST="$SERVER_IPV4"
-    NODE_HOST_BR="$SERVER_IPV4"
-  else
+  # 自签 IP 模式：insecure=1，有啥 IP 输出啥（先 IPv4 后 IPv6）
+  any=0
+
+  if [[ -n "${SERVER_IPV4:-}" ]]; then
+    print_nodes "V4" "$SERVER_IPV4" "$SERVER_IPV4" "$VLESS_PORT" "$VLESS_R_PORT" "$HY2_PORT" "1"
+    any=1
+  fi
+
+  if [[ -n "${SERVER_IPV6:-}" ]]; then
+    print_nodes "V6" "$SERVER_IPV6" "[$SERVER_IPV6]" "$VLESS6_PORT" "$VLESS_R6_PORT" "$HY2_6_PORT" "1"
+    any=1
+  fi
+
+  if [[ "$any" -eq 0 ]]; then
     log "[✖] 未检测到可用公网 IP，无法生成节点链接"
     exit 1
   fi
-  INSECURE="1"
 fi
-
-VLESS_URI="vless://$UUID@$NODE_HOST_BR:$VLESS_PORT?encryption=none&security=tls&sni=$DOMAIN&type=tcp#VLESS-TLS-$NODE_HOST"
-VLESS_REALITY_URI="vless://$UUID@$NODE_HOST_BR:$VLESS_R_PORT?encryption=none&security=reality&sni=$REALITY_SNI&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&type=tcp&flow=xtls-rprx-vision#VLESS-REALITY-$NODE_HOST"
-HY2_URI="hysteria2://$HY2_PASS@$NODE_HOST_BR:$HY2_PORT?insecure=$INSECURE&sni=$DOMAIN#HY2-$NODE_HOST"
-
-log "\n=================== VLESS-TLS 节点 ==================="
-echo "$VLESS_URI"
-command -v qrencode >/dev/null 2>&1 && echo "$VLESS_URI" | qrencode -t ansiutf8 || true
-
-log "\n=================== VLESS-REALITY 节点 ==================="
-echo "$VLESS_REALITY_URI"
-command -v qrencode >/dev/null 2>&1 && echo "$VLESS_REALITY_URI" | qrencode -t ansiutf8 || true
-
-log "\n=================== Hysteria2 节点 ==================="
-echo "$HY2_URI"
-command -v qrencode >/dev/null 2>&1 && echo "$HY2_URI" | qrencode -t ansiutf8 || true
-
-SUB_FILE="/root/singbox_nodes.txt"
-cat > "$SUB_FILE" <<EOF
-$VLESS_URI
-$VLESS_REALITY_URI
-$HY2_URI
-EOF
 
 log "\n=================== 订阅文件内容 ==================="
 cat "$SUB_FILE"
