@@ -43,8 +43,23 @@ SERVER_IPV6="$(curl -6 -s ipv6.icanhazip.com 2>/dev/null || curl -6 -s ifconfig.
 [[ -n "${SERVER_IPV4:-}" ]] && log "[✔] 检测到公网 IPv4: $SERVER_IPV4" || log "[✖] 未检测到公网 IPv4"
 [[ -n "${SERVER_IPV6:-}" ]] && log "[✔] 检测到公网 IPv6: $SERVER_IPV6" || log "[!] 未检测到公网 IPv6（可忽略）"
 
-# --------- 自动安装依赖 ---------
+# --------- 自动安装依赖（apt/yum/dnf + 自动去重） ---------
 REQUIRED_CMDS=(curl ss openssl dig systemctl bash socat cron ufw qrencode tar)
+
+# 自动识别包管理器
+PKG_MGR=""
+if command -v apt-get >/dev/null 2>&1; then
+  PKG_MGR="apt"
+elif command -v dnf >/dev/null 2>&1; then
+  PKG_MGR="dnf"
+elif command -v yum >/dev/null 2>&1; then
+  PKG_MGR="yum"
+else
+  log "[✖] 未找到支持的包管理器（apt/yum/dnf），无法自动安装依赖。"
+  exit 1
+fi
+
+# 找出缺失命令
 MISSING_CMDS=()
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || MISSING_CMDS+=("$cmd")
@@ -52,20 +67,71 @@ done
 
 if [[ ${#MISSING_CMDS[@]} -gt 0 ]]; then
   log "[!] 检测到缺失命令: ${MISSING_CMDS[*]}"
+  log "[!] 使用包管理器: $PKG_MGR"
   log "[!] 自动安装依赖中..."
-  apt update -y
-  INSTALL_PACKAGES=()
+
+  # 用关联数组实现“自动去重”
+  declare -A PKGS=()
+
+  add_pkg() { PKGS["$1"]=1; }
+
   for cmd in "${MISSING_CMDS[@]}"; do
-    case "$cmd" in
-      dig)  INSTALL_PACKAGES+=("dnsutils") ;;
-      ss)   INSTALL_PACKAGES+=("iproute2") ;;
-      cron) INSTALL_PACKAGES+=("cron") ;;
-      socat|ufw|tar) INSTALL_PACKAGES+=("$cmd") ;;
-      *)    INSTALL_PACKAGES+=("$cmd") ;;
+    case "$PKG_MGR" in
+      apt)
+        case "$cmd" in
+          dig)  add_pkg "dnsutils" ;;
+          ss)   add_pkg "iproute2" ;;
+          cron) add_pkg "cron" ;;
+          *)    add_pkg "$cmd" ;;
+        esac
+        ;;
+      yum|dnf)
+        case "$cmd" in
+          dig)  add_pkg "bind-utils" ;;
+          ss)   add_pkg "iproute" ;;
+          cron) add_pkg "cronie" ;;
+          *)    add_pkg "$cmd" ;;
+        esac
+        ;;
     esac
   done
-  apt install -y "${INSTALL_PACKAGES[@]}"
+
+  # 组装最终安装列表（已去重）
+  INSTALL_PACKAGES=()
+  for pkg in "${!PKGS[@]}"; do
+    INSTALL_PACKAGES+=("$pkg")
+  done
+
+  # 执行安装
+  case "$PKG_MGR" in
+    apt)
+      apt-get update -y
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "${INSTALL_PACKAGES[@]}"
+      ;;
+    dnf)
+      dnf -y makecache
+      dnf -y install "${INSTALL_PACKAGES[@]}"
+      ;;
+    yum)
+      yum -y makecache
+      yum -y install "${INSTALL_PACKAGES[@]}"
+      ;;
+  esac
+
+  # 安装后复检（可选但推荐）
+  POST_MISSING=()
+  for cmd in "${REQUIRED_CMDS[@]}"; do
+    command -v "$cmd" >/dev/null 2>&1 || POST_MISSING+=("$cmd")
+  done
+  if [[ ${#POST_MISSING[@]} -gt 0 ]]; then
+    log "[✖] 安装后仍缺少命令: ${POST_MISSING[*]}"
+    log "[!] 可能原因：系统源里没有对应包（例如部分 RHEL 系没有 ufw），请手动处理或改用 firewalld。"
+    exit 1
+  fi
+else
+  log "[✔] 依赖齐全，无需安装。"
 fi
+
 
 # --------- 检查常用端口 ---------
 for port in 80 443; do
