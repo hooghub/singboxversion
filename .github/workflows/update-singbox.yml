@@ -1,39 +1,42 @@
-name: Update sing-box cores
+name: Update sing-box cores automatically
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 3 * * *"  # 每天 UTC 03:00 自动检查一次（你可改）
-  push:
-    paths:
-      - ".github/workflows/update-singbox.yml"
+    - cron: "0 3 * * *" # 每天 UTC 03:00 检查一次（可改）
 
 permissions:
   contents: write
+
+concurrency:
+  group: update-singbox-cores
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (full history)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Fetch latest sing-box release info
-        id: latest
+      - name: Get latest sing-box release tag
+        id: rel
         uses: actions/github-script@v7
         with:
           script: |
             const rel = await github.rest.repos.getLatestRelease({
               owner: "SagerNet",
-              repo: "sing-box"
+              repo: "sing-box",
             });
-            core.setOutput("tag", rel.data.tag_name); // e.g. v1.11.0
+            core.setOutput("tag", rel.data.tag_name); // e.g. v1.12.20
             console.log("Latest tag:", rel.data.tag_name);
 
-      - name: Download and extract cores
+      - name: Download and extract cores (amd64/arm64)
         run: |
           set -e
-          TAG="${{ steps.latest.outputs.tag }}"
+          TAG="${{ steps.rel.outputs.tag }}"
           VER="${TAG#v}"
 
           mkdir -p bin /tmp/sb
@@ -42,15 +45,14 @@ jobs:
           curl -fL "https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${VER}-linux-arm64.tar.gz" -o /tmp/sb/arm64.tgz
 
           tar -xzf /tmp/sb/amd64.tgz -C /tmp/sb
-          install -m 755 /tmp/sb/sing-box-${VER}-linux-amd64/sing-box bin/sing-box-linux-amd64
+          install -m 755 "/tmp/sb/sing-box-${VER}-linux-amd64/sing-box" "bin/sing-box-linux-amd64"
 
-          rm -rf /tmp/sb/sing-box-${VER}-linux-amd64
           tar -xzf /tmp/sb/arm64.tgz -C /tmp/sb
-          install -m 755 /tmp/sb/sing-box-${VER}-linux-arm64/sing-box bin/sing-box-linux-arm64
+          install -m 755 "/tmp/sb/sing-box-${VER}-linux-arm64/sing-box" "bin/sing-box-linux-arm64"
 
           echo "${TAG}" > bin/VERSION
 
-      - name: Commit & push if changed
+      - name: Commit & push (rebase before push)
         run: |
           set -e
           git config user.name "singbox-bot"
@@ -65,4 +67,8 @@ jobs:
 
           TAG="$(cat bin/VERSION)"
           git commit -m "chore: update sing-box cores to ${TAG}"
-          git push
+
+          # 关键：避免 non-fast-forward（fetch first）
+          git pull --rebase origin main
+
+          git push origin main
