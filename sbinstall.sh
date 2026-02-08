@@ -416,12 +416,48 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
-log "\n=================== sing-box 实际监听端口 ==================="
-if ss -tulnp | grep -q sing-box; then
-  ss -tulnp | grep sing-box
-else
-  log "[!] 未检测到 sing-box 监听端口（服务可能未启动成功）"
-fi
+log "\n=================== sing-box 监听端口（按节点类） ==================="
+
+show_port() {
+  local name="$1"
+  local proto="$2"   # tcp / udp
+  local port="$3"
+
+  if [[ "$proto" == "tcp" ]]; then
+    if ss -tulnp 2>/dev/null | grep -E "LISTEN.*:${port}\b" | grep -q sing-box; then
+      log "[✔] ${name} (TCP/${port}) 已监听"
+      ss -tulnp 2>/dev/null | grep -E "LISTEN.*:${port}\b" | grep sing-box || true
+    else
+      log "[✖] ${name} (TCP/${port}) 未监听"
+    fi
+  else
+    if ss -uolnp 2>/dev/null | grep -E ":\b?${port}\b" | grep -q sing-box; then
+      log "[✔] ${name} (UDP/${port}) 已监听"
+      ss -uolnp 2>/dev/null | grep -E ":\b?${port}\b" | grep sing-box || true
+    else
+      # 兼容某些系统 ss 输出差异：用 -ulnp 再兜底一次
+      if ss -ulnp 2>/dev/null | grep -E ":\b?${port}\b" | grep -q sing-box; then
+        log "[✔] ${name} (UDP/${port}) 已监听"
+        ss -ulnp 2>/dev/null | grep -E ":\b?${port}\b" | grep sing-box || true
+      else
+        log "[✖] ${name} (UDP/${port}) 未监听"
+      fi
+    fi
+  fi
+}
+
+# VLESS-TLS
+show_port "VLESS-TLS IPv4" "tcp" "$VLESS_PORT"
+show_port "VLESS-TLS IPv6" "tcp" "$VLESS6_PORT"
+
+# VLESS-REALITY
+show_port "VLESS-REALITY IPv4" "tcp" "$VLESS_R_PORT"
+show_port "VLESS-REALITY IPv6" "tcp" "$VLESS_R6_PORT"
+
+# Hysteria2
+show_port "Hysteria2 IPv4" "udp" "$HY2_PORT"
+show_port "Hysteria2 IPv6" "udp" "$HY2_6_PORT"
+
 
 # --------- 生成节点 URI（按实际拥有的 IP 输出：有啥输出啥） ---------
 SUB_FILE="/root/singbox_nodes.txt"
