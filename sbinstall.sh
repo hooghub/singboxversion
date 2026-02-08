@@ -247,10 +247,12 @@ install_from_your_raw_repo() {
 
 # --------- 安装 sing-box：官方脚本 -> 外部3源 -> 回退raw ---------
 install_singbox() {
-  if command -v sing-box >/dev/null 2>&1; then
-    log "[✔] sing-box 已存在：$(sing-box version | head -n1)"
-    return 0
-  fi
+    if command -v sing-box >/dev/null 2>&1; then
+      SB_PATH="$(command -v sing-box)"
+      log "[✔] sing-box 已存在：$($SB_PATH version | head -n1)"
+      install -m 755 "$SB_PATH" /usr/local/bin/sing-box
+      return 0
+    fi
 
   log ">>> 安装 sing-box（官方脚本 -> 外部3源 -> 回退仓库 raw）..."
 
