@@ -109,42 +109,74 @@ download_with_fallback() {
 # --------- 安装 sing-box（免 GitHub API + 镜像回退） ---------
 install_singbox() {
   if command -v sing-box >/dev/null 2>&1; then
-    log "[✔] 检测到 sing-box 已安装：$(sing-box version | head -n1)"
+    echo "[✔] sing-box 已存在：$(sing-box version | head -n1)"
     return 0
   fi
 
-  log ">>> 安装 sing-box（latest/download 免 GitHub API + 镜像回退）..."
+  echo ">>> 安装 sing-box（3 源尝试失败则回退仓库 raw）..."
 
+  # --- 架构 ---
   local ARCH
   case "$(uname -m)" in
     x86_64|amd64) ARCH="amd64" ;;
     aarch64|arm64) ARCH="arm64" ;;
-    *) log "[✖] 不支持的架构: $(uname -m)"; exit 1 ;;
+    *) echo "[✖] 不支持的架构: $(uname -m)"; exit 1 ;;
   esac
 
-  # 原始（可能 github.com 不通）
-  local ORI="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
+  # --- 下载工具：依次尝试多个 URL（v6优先，失败再v4）---
+  download_try() {
+    local out="$1"; shift
+    local url
+    for url in "$@"; do
+      echo ">>> 尝试下载: $url"
+      if curl -6 -fL --connect-timeout 6 --max-time 180 "$url" -o "$out" 2>/dev/null; then
+        return 0
+      fi
+      if curl -4 -fL --connect-timeout 6 --max-time 180 "$url" -o "$out" 2>/dev/null; then
+        return 0
+      fi
+      echo "[!] 失败，换下一个源..."
+    done
+    return 1
+  }
 
-  # 代理/镜像（v6.gh-proxy 官方给的 v6 入口；mirror.ghproxy 常见用法）
-  # 说明：把原始 GitHub URL 直接拼到代理前缀后面即可。:contentReference[oaicite:1]{index=1}
-  local V6_GHPROXY="https://v6.gh-proxy.org/${ORI}"
-  local MIRROR_GHPROXY="https://mirror.ghproxy.com/${ORI}"
+  # --- 1) 先尝试 3 个“外部源”（你之前的那三个） ---
+  local ORI="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
+  local SRC1="https://v6.gh-proxy.org/${ORI}"
+  local SRC2="https://mirror.ghproxy.com/${ORI}"
+  local SRC3="${ORI}"
 
   local TGZ="/tmp/sing-box.tgz"
-  if ! download_with_fallback "$TGZ" "$V6_GHPROXY" "$MIRROR_GHPROXY" "$ORI"; then
-    log "[✖] 下载 sing-box 失败：github.com 直连不通，代理也不可用。"
-    log "    建议你换一个可用的 GitHub 代理域名，或给 VPS 开通 IPv4 出口。"
-    exit 1
+  if download_try "$TGZ" "$SRC1" "$SRC2" "$SRC3"; then
+    echo "[✔] 外部源下载成功，开始安装..."
+    tar -xzf "$TGZ" -C /tmp
+
+    local BIN_PATH
+    BIN_PATH="$(find /tmp -maxdepth 3 -type f -name sing-box -perm -u+x 2>/dev/null | head -n1 || true)"
+    [[ -n "$BIN_PATH" ]] || { echo "[✖] 解压后未找到 sing-box 二进制"; exit 1; }
+
+    install -m 755 "$BIN_PATH" /usr/local/bin/sing-box
+    echo "[✔] sing-box 安装完成：$(/usr/local/bin/sing-box version | head -n1)"
+    return 0
   fi
 
-  tar -xzf "$TGZ" -C /tmp
+  # --- 2) 三个都失败：回退到你们仓库 raw 内核（不需要 github.com） ---
+  echo "[!] 外部源全部失败，回退从仓库 raw 下载内核..."
 
-  local BIN_PATH
-  BIN_PATH="$(find /tmp -maxdepth 3 -type f -name sing-box -perm -u+x 2>/dev/null | head -n1 || true)"
-  if [[ -z "$BIN_PATH" ]]; then
-    log "[✖] 解压后未找到 sing-box 二进制"
-    exit 1
+  local CORE_BASE="https://raw.githubusercontent.com/hooghub/singboxversion/main/bin"
+  local CORE_URL="${CORE_BASE}/sing-box-linux-${ARCH}"
+
+  if download_try "/usr/local/bin/sing-box" "$CORE_URL"; then
+    chmod +x /usr/local/bin/sing-box
+    echo -n ">>> 仓库内核版本："
+    (download_try /tmp/sbver "${CORE_BASE}/VERSION" && cat /tmp/sbver) || echo "unknown"
+    echo "[✔] sing-box 安装完成：$(/usr/local/bin/sing-box version | head -n1)"
+    return 0
   fi
+
+  echo "[✖] 安装失败：外部源 + 仓库 raw 都不可用"
+  exit 1
+}
 
   install -m 755 "$BIN_PATH" /usr/local/bin/sing-box
   log "[✔] sing-box 安装完成：$(sing-box version | head -n1)"
