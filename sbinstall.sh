@@ -1,7 +1,8 @@
 #!/bin/bash
-# Sing-box 一键部署脚本（最终发布版 / V5 稳定整理版）
+# Sing-box 一键部署脚本（最终发布版 / V5 稳定整理版 + 安装顺序增强）
 # 特性：
 # - IPv6-only 友好
+# - sing-box 安装：优先官方 deb-install.sh -> 外部3源 -> 回退仓库 raw
 # - 外部源失败自动回退到仓库 raw 内核
 # - 订阅文件按组写入并带注释分隔（先 IPv4 后 IPv6）
 #
@@ -14,14 +15,6 @@
 # - VLESS-REALITY (TCP, xtls-rprx-vision)
 # - Hysteria2 (UDP)   （模式2 自签默认 insecure=1）
 #
-# sing-box 安装策略：
-# 1) 外部 3 源依次尝试（v6 优先，失败回退 v4）
-#    - v6.gh-proxy.org
-#    - mirror.ghproxy.com
-#    - github.com 直连
-# 2) 三个都失败：回退从仓库 raw 下载内核
-#    https://raw.githubusercontent.com/hooghub/singboxversion/main/bin/sing-box-linux-{amd64|arm64}
-#
 # 输出策略：
 # - 模式2：服务器有 IPv4 就输出 IPv4 节点；有 IPv6 就输出 IPv6 节点；都有就都输出；都没有则报错
 # - 模式1：由于 v4/v6 端口不同，输出两套（同域名不同端口：DOMAIN-V4PORT / DOMAIN-V6PORT）
@@ -29,6 +22,7 @@
 # 注意：
 # - 模式2自签：客户端需要允许不校验证书（VLESS-TLS: allowInsecure=1；HY2: insecure=1）
 # - IPv6-only：客户端网络必须可访问 IPv6
+
 set -euo pipefail
 
 log() { echo -e "$*"; }
@@ -46,8 +40,8 @@ log "[✔] Root 权限 OK"
 SERVER_IPV4="$(curl -4 -s ipv4.icanhazip.com 2>/dev/null || curl -4 -s ifconfig.me 2>/dev/null || true)"
 SERVER_IPV6="$(curl -6 -s ipv6.icanhazip.com 2>/dev/null || curl -6 -s ifconfig.me 2>/dev/null || true)"
 
-[[ -n "$SERVER_IPV4" ]] && log "[✔] 检测到公网 IPv4: $SERVER_IPV4" || log "[✖] 未检测到公网 IPv4"
-[[ -n "$SERVER_IPV6" ]] && log "[✔] 检测到公网 IPv6: $SERVER_IPV6" || log "[!] 未检测到公网 IPv6（可忽略）"
+[[ -n "${SERVER_IPV4:-}" ]] && log "[✔] 检测到公网 IPv4: $SERVER_IPV4" || log "[✖] 未检测到公网 IPv4"
+[[ -n "${SERVER_IPV6:-}" ]] && log "[✔] 检测到公网 IPv6: $SERVER_IPV6" || log "[!] 未检测到公网 IPv6（可忽略）"
 
 # --------- 自动安装依赖 ---------
 REQUIRED_CMDS=(curl ss openssl dig systemctl bash socat cron ufw tar)
@@ -116,23 +110,36 @@ download_with_fallback() {
   return 1
 }
 
-# --------- 安装 sing-box：外部3源失败 -> 回退仓库raw ---------
-install_singbox() {
-  if command -v sing-box >/dev/null 2>&1; then
-    log "[✔] sing-box 已存在：$(sing-box version | head -n1)"
-    return 0
+# --------- 计算架构 ---------
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)  echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    *) echo "" ;;
+  esac
+}
+
+# --------- 1) 优先尝试官方 deb-install.sh（仅 Debian/Ubuntu；失败不炸） ---------
+try_official_deb_install() {
+  command -v apt-get >/dev/null 2>&1 || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  command -v bash >/dev/null 2>&1 || return 1
+
+  command -v sing-box >/dev/null 2>&1 && return 0
+
+  log ">>> 尝试官方安装脚本：https://sing-box.app/deb-install.sh"
+  if bash <(curl -fsSL https://sing-box.app/deb-install.sh); then
+    :
+  else
+    log "[!] 官方 deb-install.sh 执行失败，进入多源下载兜底..."
   fi
 
-  log ">>> 安装 sing-box（外部3源失败则回退仓库 raw）..."
+  command -v sing-box >/dev/null 2>&1
+}
 
-  local ARCH
-  case "$(uname -m)" in
-    x86_64|amd64)  ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) log "[✖] 不支持的架构: $(uname -m)"; exit 1 ;;
-  esac
-
-  # 1) 外部源（3个）
+# --------- 2) 外部3源下载官方 release tar.gz（你原逻辑封装） ---------
+install_from_official_release_with_proxies() {
+  local ARCH="$1"
   local ORI="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
   local SRC1="https://v6.gh-proxy.org/${ORI}"
   local SRC2="https://mirror.ghproxy.com/${ORI}"
@@ -146,14 +153,18 @@ install_singbox() {
 
     local BIN_PATH
     BIN_PATH="$(find /tmp -maxdepth 3 -type f -name sing-box -perm -u+x 2>/dev/null | head -n1 || true)"
-    [[ -n "$BIN_PATH" ]] || { log "[✖] 解压后未找到 sing-box 二进制"; exit 1; }
+    [[ -n "$BIN_PATH" ]] || { log "[✖] 解压后未找到 sing-box 二进制"; return 1; }
 
     install -m 755 "$BIN_PATH" /usr/local/bin/sing-box
     log "[✔] sing-box 安装完成：$(/usr/local/bin/sing-box version | head -n1)"
     return 0
   fi
+  return 1
+}
 
-  # 2) 回退到你们仓库 raw
+# --------- 3) 回退到你们仓库 raw（你原逻辑封装） ---------
+install_from_your_raw_repo() {
+  local ARCH="$1"
   log "[!] 外部源全部失败，回退从仓库 raw 下载内核..."
 
   local CORE_BASE="https://raw.githubusercontent.com/hooghub/singboxversion/main/bin"
@@ -170,8 +181,39 @@ install_singbox() {
     log "[✔] sing-box 安装完成：$(/usr/local/bin/sing-box version | head -n1)"
     return 0
   fi
+  return 1
+}
 
-  log "[✖] 安装失败：外部源 + 仓库 raw 都不可用"
+# --------- 安装 sing-box：官方脚本 -> 外部3源 -> 回退raw ---------
+install_singbox() {
+  if command -v sing-box >/dev/null 2>&1; then
+    log "[✔] sing-box 已存在：$(sing-box version | head -n1)"
+    return 0
+  fi
+
+  log ">>> 安装 sing-box（官方脚本 -> 外部3源 -> 回退仓库 raw）..."
+
+  local ARCH
+  ARCH="$(detect_arch)"
+  [[ -n "$ARCH" ]] || { log "[✖] 不支持的架构: $(uname -m)"; exit 1; }
+
+  # 1) 官方 deb-install.sh（最标准的安装路径）
+  if try_official_deb_install; then
+    log "[✔] 官方脚本安装完成：$(sing-box version | head -n1)"
+    return 0
+  fi
+
+  # 2) 你原来的外部3源（更抗网络）
+  if install_from_official_release_with_proxies "$ARCH"; then
+    return 0
+  fi
+
+  # 3) 回退 raw（二进制兜底）
+  if install_from_your_raw_repo "$ARCH"; then
+    return 0
+  fi
+
+  log "[✖] 安装失败：官方脚本 + 外部源 + 仓库 raw 都不可用"
   exit 1
 }
 
@@ -217,9 +259,9 @@ if [[ "$MODE" == "1" ]]; then
   else
     log ">>> 申请新的 Let's Encrypt TLS 证书"
 
-    if [[ -n "$SERVER_IPV4" ]]; then
+    if [[ -n "${SERVER_IPV4:-}" ]]; then
       USE_LISTEN="--listen-v4"
-    elif [[ -n "$SERVER_IPV6" ]]; then
+    elif [[ -n "${SERVER_IPV6:-}" ]]; then
       USE_LISTEN="--listen-v6"
     else
       log "[✖] 未检测到可用 IPv4 或 IPv6，无法申请证书"
@@ -240,8 +282,8 @@ else
   log "[!] 自签模式，将生成固定域名 $DOMAIN 的自签证书"
 
   SAN="DNS:$DOMAIN"
-  [[ -n "$SERVER_IPV4" ]] && SAN+=",IP:$SERVER_IPV4"
-  [[ -n "$SERVER_IPV6" ]] && SAN+=",IP:$SERVER_IPV6"
+  [[ -n "${SERVER_IPV4:-}" ]] && SAN+=",IP:$SERVER_IPV4"
+  [[ -n "${SERVER_IPV6:-}" ]] && SAN+=",IP:$SERVER_IPV6"
 
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$CERT_DIR/privkey.pem" \
@@ -417,9 +459,9 @@ systemctl --no-pager -l status sing-box || true
 
 log "\n=================== sing-box 监听端口状态 ==================="
 check_port() {
-  local name="$1"    # VLESS-TLS / VLESS-REALITY / Hysteria2
-  local ipver="$2"   # IPv4 / IPv6
-  local proto="$3"   # tcp / udp
+  local name="$1"
+  local ipver="$2"
+  local proto="$3"
   local port="$4"
 
   [[ -z "${port:-}" ]] && return 0
@@ -439,15 +481,12 @@ check_port() {
   fi
 }
 
-# -------- VLESS-TLS --------
 check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
 check_port "VLESS-TLS" "IPv6" "tcp" "$VLESS6_PORT"
 echo
-# -------- VLESS-REALITY --------
 check_port "VLESS-REALITY" "IPv4" "tcp" "$VLESS_R_PORT"
 check_port "VLESS-REALITY" "IPv6" "tcp" "$VLESS_R6_PORT"
 echo
-# -------- Hysteria2 --------
 check_port "Hysteria2" "IPv4" "udp" "$HY2_PORT"
 check_port "Hysteria2" "IPv6" "udp" "$HY2_6_PORT"
 
@@ -456,15 +495,14 @@ SUB_FILE="/root/singbox_nodes.txt"
 : > "$SUB_FILE"
 
 print_nodes() {
-  local TAG="$1"      # V4 / V6 / DOMAIN-V4PORT / DOMAIN-V6PORT
-  local HOST_RAW="$2" # 纯 host（IPv6 不带[]）
-  local HOST_BR="$3"  # 用于 URI 的 host（IPv6 带[]）
-  local VP="$4"       # VLESS-TLS port
-  local RP="$5"       # VLESS-REALITY port
-  local HP="$6"       # HY2 port
-  local INS="$7"      # insecure 0/1
+  local TAG="$1"
+  local HOST_RAW="$2"
+  local HOST_BR="$3"
+  local VP="$4"
+  local RP="$5"
+  local HP="$6"
+  local INS="$7"
 
-  # VLESS-TLS：模式2 自签需要 allowInsecure=1
   local VLESS_URI_LOCAL="vless://$UUID@$HOST_BR:$VP?encryption=none&security=tls&sni=$DOMAIN&allowInsecure=$INS&type=tcp#VLESS-TLS-${TAG}-${HOST_RAW}"
   local VLESS_REALITY_URI_LOCAL="vless://$UUID@$HOST_BR:$RP?encryption=none&security=reality&sni=$REALITY_SNI&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&type=tcp&flow=xtls-rprx-vision#VLESS-REALITY-${TAG}-${HOST_RAW}"
   local HY2_URI_LOCAL="hysteria2://$HY2_PASS@$HOST_BR:$HP?insecure=$INS&sni=$DOMAIN#HY2-${TAG}-${HOST_RAW}"
@@ -481,7 +519,6 @@ print_nodes() {
   echo "$HY2_URI_LOCAL"
   command -v qrencode >/dev/null 2>&1 && echo "$HY2_URI_LOCAL" | qrencode -t ansiutf8 || true
 
-  # 订阅文件：按组写入（带注释分隔）
   {
     echo ""
     echo "# ===== ${TAG} ====="
@@ -492,23 +529,18 @@ print_nodes() {
 }
 
 if [[ "$MODE" == "1" ]]; then
-  # 域名模式：insecure=0，但 v4/v6 端口不同，输出两套端口（先 v4port 后 v6port）
   print_nodes "DOMAIN-V4PORT" "$DOMAIN" "$DOMAIN" "$VLESS_PORT" "$VLESS_R_PORT" "$HY2_PORT" "0"
   print_nodes "DOMAIN-V6PORT" "$DOMAIN" "$DOMAIN" "$VLESS6_PORT" "$VLESS_R6_PORT" "$HY2_6_PORT" "0"
 else
-  # 自签 IP 模式：insecure=1，有啥 IP 输出啥（先 IPv4 后 IPv6）
   any=0
-
   if [[ -n "${SERVER_IPV4:-}" ]]; then
     print_nodes "V4" "$SERVER_IPV4" "$SERVER_IPV4" "$VLESS_PORT" "$VLESS_R_PORT" "$HY2_PORT" "1"
     any=1
   fi
-
   if [[ -n "${SERVER_IPV6:-}" ]]; then
     print_nodes "V6" "$SERVER_IPV6" "[$SERVER_IPV6]" "$VLESS6_PORT" "$VLESS_R6_PORT" "$HY2_6_PORT" "1"
     any=1
   fi
-
   if [[ "$any" -eq 0 ]]; then
     log "[✖] 未检测到可用公网 IP，无法生成节点链接"
     exit 1
@@ -518,5 +550,4 @@ fi
 log "\n=================== 订阅文件内容 ==================="
 cat "$SUB_FILE"
 log "\n订阅文件已保存到：$SUB_FILE"
-
 log "\n=================== 部署完成 ==================="
