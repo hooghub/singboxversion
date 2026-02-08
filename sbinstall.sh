@@ -1,34 +1,33 @@
 #!/bin/bash
-# Sing-box 一键部署脚本（最终版 V5 / IPv6-only 友好 / 外部源失败自动回退仓库内核 / 订阅分组注释）
-# 支持：
+# Sing-box 一键部署脚本（最终发布版 / V5 稳定整理版）
+# 特性：
+# - IPv6-only 友好
+# - 外部源失败自动回退到仓库 raw 内核
+# - 订阅文件按组写入并带注释分隔（先 IPv4 后 IPv6）
+#
+# 支持模式：
 # 1) 域名 + Let's Encrypt（acme.sh standalone）
 # 2) 公网 IP + 自签固定域名 www.epple.com
+#
 # 协议：
-# - VLESS-TLS (TCP)
+# - VLESS-TLS (TCP)   （模式2 自签默认 allowInsecure=1）
 # - VLESS-REALITY (TCP, xtls-rprx-vision)
-# - Hysteria2 (UDP)
+# - Hysteria2 (UDP)   （模式2 自签默认 insecure=1）
 #
 # sing-box 安装策略：
-# 1) 外部 3 源依次尝试（v6优先，失败回退v4）：
+# 1) 外部 3 源依次尝试（v6 优先，失败回退 v4）
 #    - v6.gh-proxy.org
 #    - mirror.ghproxy.com
 #    - github.com 直连
-# 2) 三个都失败：回退从你们仓库 raw 下载内核：
+# 2) 三个都失败：回退从仓库 raw 下载内核
 #    https://raw.githubusercontent.com/hooghub/singboxversion/main/bin/sing-box-linux-{amd64|arm64}
 #
-# 节点输出策略：
-# - 模式2：有 IPv4 输出 IPv4；有 IPv6 输出 IPv6；都有就都输出；都没有则报错
-# - 模式1：由于 v4/v6 端口不同，输出两套（同域名不同端口）
-#
-# 订阅文件策略（V5 新增）：
-# - 订阅文件 /root/singbox_nodes.txt 按组写入，并加入注释分隔：
-#   # ===== V4 =====
-#   ...
-#   # ===== V6 =====
-# - 模式2：保证先 IPv4 后 IPv6（如果存在）
+# 输出策略：
+# - 模式2：服务器有 IPv4 就输出 IPv4 节点；有 IPv6 就输出 IPv6 节点；都有就都输出；都没有则报错
+# - 模式1：由于 v4/v6 端口不同，输出两套（同域名不同端口：DOMAIN-V4PORT / DOMAIN-V6PORT）
 #
 # 注意：
-# - 模式2自签：客户端需要允许不校验证书（insecure）
+# - 模式2自签：客户端需要允许不校验证书（VLESS-TLS: allowInsecure=1；HY2: insecure=1）
 # - IPv6-only：客户端网络必须可访问 IPv6
 set -euo pipefail
 
@@ -133,7 +132,7 @@ install_singbox() {
     *) log "[✖] 不支持的架构: $(uname -m)"; exit 1 ;;
   esac
 
-  # 1) 外部源（你之前的那三个）
+  # 1) 外部源（3个）
   local ORI="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
   local SRC1="https://v6.gh-proxy.org/${ORI}"
   local SRC2="https://mirror.ghproxy.com/${ORI}"
@@ -416,11 +415,7 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
-log "=================== 服务状态 ==================="
-systemctl --no-pager -l status sing-box || true
-
 log "\n=================== sing-box 监听端口状态 ==================="
-
 check_port() {
   local name="$1"    # VLESS-TLS / VLESS-REALITY / Hysteria2
   local ipver="$2"   # IPv4 / IPv6
@@ -447,62 +442,14 @@ check_port() {
 # -------- VLESS-TLS --------
 check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
 check_port "VLESS-TLS" "IPv6" "tcp" "$VLESS6_PORT"
-
 echo
-
 # -------- VLESS-REALITY --------
 check_port "VLESS-REALITY" "IPv4" "tcp" "$VLESS_R_PORT"
 check_port "VLESS-REALITY" "IPv6" "tcp" "$VLESS_R6_PORT"
-
 echo
-
 # -------- Hysteria2 --------
 check_port "Hysteria2" "IPv4" "udp" "$HY2_PORT"
 check_port "Hysteria2" "IPv6" "udp" "$HY2_6_PORT"
-
-
-# -------- VLESS-TLS --------
-check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
-check_port "VLESS-TLS" "IPv6" "tcp" "$VLESS6_PORT"
-
-echo
-
-# -------- VLESS-REALITY --------
-check_port "VLESS-REALITY" "IPv4" "tcp" "$VLESS_R_PORT"
-check_port "VLESS-REALITY" "IPv6" "tcp" "$VLESS_R6_PORT"
-
-echo
-
-# -------- Hysteria2 --------
-check_port "Hysteria2" "IPv4" "udp" "$HY2_PORT"
-check_port "Hysteria2" "IPv6" "udp" "$HY2_6_PORT"
-
-# VLESS-TLS
-show_port "VLESS-TLS IPv4" "tcp" "$VLESS_PORT"
-show_port "VLESS-TLS IPv6" "tcp" "$VLESS6_PORT"
-
-# VLESS-REALITY
-show_port "VLESS-REALITY IPv4" "tcp" "$VLESS_R_PORT"
-show_port "VLESS-REALITY IPv6" "tcp" "$VLESS_R6_PORT"
-
-# Hysteria2
-show_port "Hysteria2 IPv4" "udp" "$HY2_PORT"
-show_port "Hysteria2 IPv6" "udp" "$HY2_6_PORT"
-
-}
-
-# VLESS-TLS
-show_port "VLESS-TLS IPv4" "tcp" "$VLESS_PORT"
-show_port "VLESS-TLS IPv6" "tcp" "$VLESS6_PORT"
-
-# VLESS-REALITY
-show_port "VLESS-REALITY IPv4" "tcp" "$VLESS_R_PORT"
-show_port "VLESS-REALITY IPv6" "tcp" "$VLESS_R6_PORT"
-
-# Hysteria2
-show_port "Hysteria2 IPv4" "udp" "$HY2_PORT"
-show_port "Hysteria2 IPv6" "udp" "$HY2_6_PORT"
-
 
 # --------- 生成节点 URI（按实际拥有的 IP 输出：有啥输出啥） ---------
 SUB_FILE="/root/singbox_nodes.txt"
@@ -517,6 +464,7 @@ print_nodes() {
   local HP="$6"       # HY2 port
   local INS="$7"      # insecure 0/1
 
+  # VLESS-TLS：模式2 自签需要 allowInsecure=1
   local VLESS_URI_LOCAL="vless://$UUID@$HOST_BR:$VP?encryption=none&security=tls&sni=$DOMAIN&allowInsecure=$INS&type=tcp#VLESS-TLS-${TAG}-${HOST_RAW}"
   local VLESS_REALITY_URI_LOCAL="vless://$UUID@$HOST_BR:$RP?encryption=none&security=reality&sni=$REALITY_SNI&fp=chrome&pbk=$REALITY_PUBLIC_KEY&sid=$REALITY_SHORT_ID&type=tcp&flow=xtls-rprx-vision#VLESS-REALITY-${TAG}-${HOST_RAW}"
   local HY2_URI_LOCAL="hysteria2://$HY2_PASS@$HOST_BR:$HP?insecure=$INS&sni=$DOMAIN#HY2-${TAG}-${HOST_RAW}"
@@ -533,7 +481,7 @@ print_nodes() {
   echo "$HY2_URI_LOCAL"
   command -v qrencode >/dev/null 2>&1 && echo "$HY2_URI_LOCAL" | qrencode -t ansiutf8 || true
 
-  # V5：订阅文件分组注释（追加写入）
+  # 订阅文件：按组写入（带注释分隔）
   {
     echo ""
     echo "# ===== ${TAG} ====="
@@ -544,7 +492,7 @@ print_nodes() {
 }
 
 if [[ "$MODE" == "1" ]]; then
-  # 域名模式：insecure=0，但因为 v4/v6 端口不同，输出两套端口链接（先 v4port 后 v6port）
+  # 域名模式：insecure=0，但 v4/v6 端口不同，输出两套端口（先 v4port 后 v6port）
   print_nodes "DOMAIN-V4PORT" "$DOMAIN" "$DOMAIN" "$VLESS_PORT" "$VLESS_R_PORT" "$HY2_PORT" "0"
   print_nodes "DOMAIN-V6PORT" "$DOMAIN" "$DOMAIN" "$VLESS6_PORT" "$VLESS_R6_PORT" "$HY2_6_PORT" "0"
 else
