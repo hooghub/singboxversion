@@ -116,6 +116,8 @@ systemd、证书、REALITY 全部支持 IPv6
 订阅文件 /root/singbox_nodes.txt
 
 🚀 使用方法
+一键脚本
+```
 bash <(curl -Ls https://raw.githubusercontent.com/hooghub/singboxversion/main/sbinstall.sh)
 
 
