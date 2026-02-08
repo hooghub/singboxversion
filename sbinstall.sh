@@ -44,7 +44,7 @@ SERVER_IPV6="$(curl -6 -s ipv6.icanhazip.com 2>/dev/null || curl -6 -s ifconfig.
 [[ -n "${SERVER_IPV6:-}" ]] && log "[✔] 检测到公网 IPv6: $SERVER_IPV6" || log "[!] 未检测到公网 IPv6（可忽略）"
 
 # --------- 自动安装依赖 ---------
-REQUIRED_CMDS=(curl ss openssl dig systemctl bash socat cron ufw tar)
+REQUIRED_CMDS=(curl ss openssl dig systemctl bash socat cron ufw qrencode tar)
 MISSING_CMDS=()
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || MISSING_CMDS+=("$cmd")
@@ -65,11 +65,6 @@ if [[ ${#MISSING_CMDS[@]} -gt 0 ]]; then
     esac
   done
   apt install -y "${INSTALL_PACKAGES[@]}"
-fi
-
-# qrencode 可选
-if ! command -v qrencode >/dev/null 2>&1; then
-  log "[!] 未安装 qrencode（可选），如需二维码：apt install -y qrencode"
 fi
 
 # --------- 检查常用端口 ---------
