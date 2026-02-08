@@ -5,7 +5,7 @@
 
 适合场景：
 
-    只有 IPv6 出口（无 IPv4 NAT）
+    双栈vps和只有 IPv6 出口（无 IPv4 NAT）
     
     github.com / api.github.com 无法访问
     
