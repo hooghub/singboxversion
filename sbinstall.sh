@@ -1,7 +1,7 @@
 #!/bin/bash
-# Sing-box 一键部署脚本（最终版 / 免 GitHub API / IPv6-only 友好）
+# Sing-box 一键部署脚本（最终版 V2 / 免 GitHub API / IPv6-only 友好 / 镜像回退）
 # 支持：
-# 1) 域名 + Let's Encrypt（acme.sh standalone，自动选择 v4/v6）
+# 1) 域名 + Let's Encrypt（acme.sh standalone）
 # 2) 公网 IP + 自签固定域名 www.epple.com
 # 协议：
 # - VLESS-TLS (TCP)
@@ -9,10 +9,11 @@
 # - Hysteria2 (UDP)
 #
 # 关键修复：
-# - 不使用 api.github.com（避免 API 不通）
-# - IPv4 检测失败不退出（set -e 也不会中断）
+# - 不使用 api.github.com
+# - IPv4 检测失败不退出
 # - 自签 SAN 不塞空 IPv4
 # - IPv6-only 时节点 host 自动使用 [IPv6]
+# - 下载 sing-box 时：github.com 不通则自动走代理/镜像（v6 优先）
 #
 # 注意：
 # - 模式2自签：客户端需要允许不校验证书（insecure）
@@ -86,14 +87,33 @@ while true; do
   log "[!] 输入错误，请重新输入 1 或 2"
 done
 
-# --------- 安装 sing-box（免 GitHub API：latest/download） ---------
-install_singbox_noapi() {
+# --------- 下载工具（带 v6/v4 + 镜像回退） ---------
+download_with_fallback() {
+  # 用法：download_with_fallback <output_path> <url1> <url2> ...
+  local out="$1"; shift
+  local url
+  for url in "$@"; do
+    log ">>> 尝试下载: $url"
+    # 优先 v6，再 v4；都失败就换下一个 url
+    if curl -6 -fL --connect-timeout 6 --max-time 180 "$url" -o "$out" 2>/dev/null; then
+      return 0
+    fi
+    if curl -4 -fL --connect-timeout 6 --max-time 180 "$url" -o "$out" 2>/dev/null; then
+      return 0
+    fi
+    log "[!] 失败，换下一个源..."
+  done
+  return 1
+}
+
+# --------- 安装 sing-box（免 GitHub API + 镜像回退） ---------
+install_singbox() {
   if command -v sing-box >/dev/null 2>&1; then
     log "[✔] 检测到 sing-box 已安装：$(sing-box version | head -n1)"
     return 0
   fi
 
-  log ">>> 安装 sing-box（GitHub latest/download，无需 GitHub API）..."
+  log ">>> 安装 sing-box（latest/download 免 GitHub API + 镜像回退）..."
 
   local ARCH
   case "$(uname -m)" in
@@ -102,14 +122,19 @@ install_singbox_noapi() {
     *) log "[✖] 不支持的架构: $(uname -m)"; exit 1 ;;
   esac
 
-  local URL="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
+  # 原始（可能 github.com 不通）
+  local ORI="https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-${ARCH}.tar.gz"
+
+  # 代理/镜像（v6.gh-proxy 官方给的 v6 入口；mirror.ghproxy 常见用法）
+  # 说明：把原始 GitHub URL 直接拼到代理前缀后面即可。:contentReference[oaicite:1]{index=1}
+  local V6_GHPROXY="https://v6.gh-proxy.org/${ORI}"
+  local MIRROR_GHPROXY="https://mirror.ghproxy.com/${ORI}"
+
   local TGZ="/tmp/sing-box.tgz"
-
-  log ">>> 下载: $URL"
-
-  if ! curl -6 -fL "$URL" -o "$TGZ" 2>/dev/null; then
-    log "[!] IPv6 下载失败，尝试 IPv4..."
-    curl -4 -fL "$URL" -o "$TGZ"
+  if ! download_with_fallback "$TGZ" "$V6_GHPROXY" "$MIRROR_GHPROXY" "$ORI"; then
+    log "[✖] 下载 sing-box 失败：github.com 直连不通，代理也不可用。"
+    log "    建议你换一个可用的 GitHub 代理域名，或给 VPS 开通 IPv4 出口。"
+    exit 1
   fi
 
   tar -xzf "$TGZ" -C /tmp
@@ -125,12 +150,11 @@ install_singbox_noapi() {
   log "[✔] sing-box 安装完成：$(sing-box version | head -n1)"
 }
 
-install_singbox_noapi
+install_singbox
 
 CERT_DIR="/etc/ssl/sing-box"
 mkdir -p "$CERT_DIR"
 
-# --------- 随机端口函数 ---------
 get_random_port() {
   while :; do
     local PORT=$((RANDOM%50000+10000))
@@ -150,7 +174,6 @@ if [[ "$MODE" == "1" ]]; then
     break
   done
 
-  # 安装 acme.sh
   if ! command -v acme.sh >/dev/null 2>&1; then
     log ">>> 安装 acme.sh ..."
     curl -fsSL https://get.acme.sh | sh
@@ -187,7 +210,6 @@ if [[ "$MODE" == "1" ]]; then
     chmod 644 "$CERT_DIR"/*.pem
     log "[✔] TLS 证书申请完成"
   fi
-
 else
   DOMAIN="www.epple.com"
   log "[!] 自签模式，将生成固定域名 $DOMAIN 的自签证书"
@@ -201,7 +223,6 @@ else
     -out "$CERT_DIR/fullchain.pem" \
     -subj "/CN=$DOMAIN" \
     -addext "subjectAltName = $SAN"
-
   chmod 644 "$CERT_DIR"/*.pem
   log "[✔] 自签证书生成完成（SAN: $SAN）"
 fi
@@ -216,12 +237,10 @@ read -rp "请输入 VLESS REALITY 端口 (默认 0 随机): " VLESS_R_PORT
 read -rp "请输入 Hysteria2 UDP 端口 (默认 8443, 输入0随机): " HY2_PORT
 [[ -z "${HY2_PORT:-}" || "$HY2_PORT" == "0" ]] && HY2_PORT=$(get_random_port)
 
-# IPv6 端口（独立）
 VLESS6_PORT=$(get_random_port)
 VLESS_R6_PORT=$(get_random_port)
 HY2_6_PORT=$(get_random_port)
 
-# 自动生成 UUID / Hysteria2 密码
 UUID="$(cat /proc/sys/kernel/random/uuid)"
 HY2_PASS="$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 24)"
 
@@ -238,7 +257,6 @@ REALITY_SHORT_ID="$(openssl rand -hex 8)"
 
 # --------- 生成 sing-box 配置（严格 JSON） ---------
 mkdir -p /etc/sing-box
-
 cat > /etc/sing-box/config.json <<EOF
 {
   "log": { "level": "info" },
@@ -277,10 +295,7 @@ cat > /etc/sing-box/config.json <<EOF
         "server_name": "$REALITY_SNI",
         "reality": {
           "enabled": true,
-          "handshake": {
-            "server": "$REALITY_SERVER",
-            "server_port": 443
-          },
+          "handshake": { "server": "$REALITY_SERVER", "server_port": 443 },
           "private_key": "$REALITY_PRIVATE_KEY",
           "short_id": ["$REALITY_SHORT_ID"]
         }
@@ -296,10 +311,7 @@ cat > /etc/sing-box/config.json <<EOF
         "server_name": "$REALITY_SNI",
         "reality": {
           "enabled": true,
-          "handshake": {
-            "server": "$REALITY_SERVER",
-            "server_port": 443
-          },
+          "handshake": { "server": "$REALITY_SERVER", "server_port": 443 },
           "private_key": "$REALITY_PRIVATE_KEY",
           "short_id": ["$REALITY_SHORT_ID"]
         }
@@ -333,10 +345,9 @@ cat > /etc/sing-box/config.json <<EOF
   "outbounds": [{ "type": "direct" }]
 }
 EOF
-
 log "[✔] sing-box 配置生成完成：/etc/sing-box/config.json"
 
-# --------- systemd 服务（如果不存在就创建） ---------
+# --------- systemd 服务 ---------
 if [[ ! -f /etc/systemd/system/sing-box.service ]]; then
   cat > /etc/systemd/system/sing-box.service <<'EOF'
 [Unit]
@@ -355,10 +366,9 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 fi
-
 systemctl daemon-reload
 
-# --------- 防火墙端口开放 ---------
+# --------- 防火墙端口 ---------
 if command -v ufw >/dev/null 2>&1; then
   ufw allow 80/tcp >/dev/null 2>&1 || true
   ufw allow 443/tcp >/dev/null 2>&1 || true
@@ -371,21 +381,13 @@ if command -v ufw >/dev/null 2>&1; then
   ufw reload >/dev/null 2>&1 || true
 fi
 
-# --------- 启动 sing-box ---------
+# --------- 启动 ---------
 systemctl enable sing-box >/dev/null 2>&1 || true
 systemctl restart sing-box
 sleep 2
 
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
-
-# --------- 检查端口监听 ---------
-ss -tulnp | grep ":$VLESS_PORT" >/dev/null 2>&1 && log "[✔] VLESS TLS IPv4（$VLESS_PORT） 已监听" || log "[✖] VLESS TLS IPv4（$VLESS_PORT） 未监听"
-ss -tulnp | grep ":$VLESS6_PORT" >/dev/null 2>&1 && log "[✔] VLESS TLS IPv6（$VLESS6_PORT） 已监听" || log "[✖] VLESS TLS IPv6（$VLESS6_PORT） 未监听"
-ss -tulnp | grep ":$VLESS_R_PORT" >/dev/null 2>&1 && log "[✔] VLESS REALITY IPv4（$VLESS_R_PORT） 已监听" || log "[✖] VLESS REALITY IPv4（$VLESS_R_PORT） 未监听"
-ss -tulnp | grep ":$VLESS_R6_PORT" >/dev/null 2>&1 && log "[✔] VLESS REALITY IPv6（$VLESS_R6_PORT） 已监听" || log "[✖] VLESS REALITY IPv6（$VLESS_R6_PORT） 未监听"
-ss -ulnp | grep ":$HY2_PORT" >/dev/null 2>&1 && log "[✔] Hysteria2 UDP IPv4（$HY2_PORT） 已监听" || log "[✖] Hysteria2 UDP IPv4（$HY2_PORT） 未监听"
-ss -ulnp | grep ":$HY2_6_PORT" >/dev/null 2>&1 && log "[✔] Hysteria2 UDP IPv6（$HY2_6_PORT） 已监听" || log "[✖] Hysteria2 UDP IPv6（$HY2_6_PORT） 未监听"
 
 # --------- 生成节点 URI ---------
 if [[ "$MODE" == "1" ]]; then
@@ -422,7 +424,6 @@ log "\n=================== Hysteria2 节点 ==================="
 echo "$HY2_URI"
 command -v qrencode >/dev/null 2>&1 && echo "$HY2_URI" | qrencode -t ansiutf8 || true
 
-# --------- 保存订阅文件（按行写入） ---------
 SUB_FILE="/root/singbox_nodes.txt"
 cat > "$SUB_FILE" <<EOF
 $VLESS_URI
