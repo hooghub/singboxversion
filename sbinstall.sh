@@ -416,35 +416,46 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
-log "\n=================== sing-box 监听端口（按节点类） ==================="
+log "\n=================== sing-box 监听端口状态 ==================="
 
-show_port() {
-  local name="$1"
-  local proto="$2"   # tcp / udp
-  local port="$3"
+check_port() {
+  local name="$1"    # VLESS-TLS / VLESS-REALITY / Hysteria2
+  local ipver="$2"   # IPv4 / IPv6
+  local proto="$3"   # tcp / udp
+  local port="$4"
+
+  [[ -z "${port:-}" ]] && return 0
 
   if [[ "$proto" == "tcp" ]]; then
-    if ss -tulnp 2>/dev/null | grep -E "LISTEN.*:${port}\b" | grep -q sing-box; then
-      log "[✔] ${name} (TCP/${port}) 已监听"
-      ss -tulnp 2>/dev/null | grep -E "LISTEN.*:${port}\b" | grep sing-box || true
+    if ss -tlnp 2>/dev/null | grep -qE "LISTEN.*:${port}\b.*sing-box"; then
+      echo "[✔️] ${name} ${ipver} (TCP/${port}) 已监听"
     else
-      log "[✖] ${name} (TCP/${port}) 未监听"
+      echo "[❌] ${name} ${ipver} (TCP/${port}) 未监听"
     fi
   else
-    if ss -uolnp 2>/dev/null | grep -E ":\b?${port}\b" | grep -q sing-box; then
-      log "[✔] ${name} (UDP/${port}) 已监听"
-      ss -uolnp 2>/dev/null | grep -E ":\b?${port}\b" | grep sing-box || true
+    if ss -ulnp 2>/dev/null | grep -qE ":${port}\b.*sing-box"; then
+      echo "[✔️] ${name} ${ipver} (UDP/${port}) 已监听"
     else
-      # 兼容某些系统 ss 输出差异：用 -ulnp 再兜底一次
-      if ss -ulnp 2>/dev/null | grep -E ":\b?${port}\b" | grep -q sing-box; then
-        log "[✔] ${name} (UDP/${port}) 已监听"
-        ss -ulnp 2>/dev/null | grep -E ":\b?${port}\b" | grep sing-box || true
-      else
-        log "[✖] ${name} (UDP/${port}) 未监听"
-      fi
+      echo "[❌] ${name} ${ipver} (UDP/${port}) 未监听"
     fi
   fi
 }
+
+# -------- VLESS-TLS --------
+check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
+check_port "VLESS-TLS" "IPv6" "tcp" "$VLESS6_PORT"
+
+echo
+
+# -------- VLESS-REALITY --------
+check_port "VLESS-REALITY" "IPv4" "tcp" "$VLESS_R_PORT"
+check_port "VLESS-REALITY" "IPv6" "tcp" "$VLESS_R6_PORT"
+
+echo
+
+# -------- Hysteria2 --------
+check_port "Hysteria2" "IPv4" "udp" "$HY2_PORT"
+check_port "Hysteria2" "IPv6" "udp" "$HY2_6_PORT"
 
 # VLESS-TLS
 show_port "VLESS-TLS IPv4" "tcp" "$VLESS_PORT"
