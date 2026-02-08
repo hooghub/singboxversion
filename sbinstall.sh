@@ -416,6 +416,13 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
+log "\n=================== sing-box 实际监听端口 ==================="
+if ss -tulnp | grep -q sing-box; then
+  ss -tulnp | grep sing-box
+else
+  log "[!] 未检测到 sing-box 监听端口（服务可能未启动成功）"
+fi
+
 # --------- 生成节点 URI（按实际拥有的 IP 输出：有啥输出啥） ---------
 SUB_FILE="/root/singbox_nodes.txt"
 : > "$SUB_FILE"
