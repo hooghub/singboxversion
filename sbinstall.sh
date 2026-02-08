@@ -416,6 +416,9 @@ sleep 2
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
 
+log "=================== 服务状态 ==================="
+systemctl --no-pager -l status sing-box || true
+
 log "\n=================== sing-box 监听端口状态 ==================="
 
 check_port() {
@@ -440,6 +443,23 @@ check_port() {
     fi
   fi
 }
+
+# -------- VLESS-TLS --------
+check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
+check_port "VLESS-TLS" "IPv6" "tcp" "$VLESS6_PORT"
+
+echo
+
+# -------- VLESS-REALITY --------
+check_port "VLESS-REALITY" "IPv4" "tcp" "$VLESS_R_PORT"
+check_port "VLESS-REALITY" "IPv6" "tcp" "$VLESS_R6_PORT"
+
+echo
+
+# -------- Hysteria2 --------
+check_port "Hysteria2" "IPv4" "udp" "$HY2_PORT"
+check_port "Hysteria2" "IPv6" "udp" "$HY2_6_PORT"
+
 
 # -------- VLESS-TLS --------
 check_port "VLESS-TLS" "IPv4" "tcp" "$VLESS_PORT"
