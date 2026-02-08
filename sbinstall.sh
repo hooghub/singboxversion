@@ -458,6 +458,20 @@ show_port "VLESS-REALITY IPv6" "tcp" "$VLESS_R6_PORT"
 show_port "Hysteria2 IPv4" "udp" "$HY2_PORT"
 show_port "Hysteria2 IPv6" "udp" "$HY2_6_PORT"
 
+}
+
+# VLESS-TLS
+show_port "VLESS-TLS IPv4" "tcp" "$VLESS_PORT"
+show_port "VLESS-TLS IPv6" "tcp" "$VLESS6_PORT"
+
+# VLESS-REALITY
+show_port "VLESS-REALITY IPv4" "tcp" "$VLESS_R_PORT"
+show_port "VLESS-REALITY IPv6" "tcp" "$VLESS_R6_PORT"
+
+# Hysteria2
+show_port "Hysteria2 IPv4" "udp" "$HY2_PORT"
+show_port "Hysteria2 IPv6" "udp" "$HY2_6_PORT"
+
 
 # --------- 生成节点 URI（按实际拥有的 IP 输出：有啥输出啥） ---------
 SUB_FILE="/root/singbox_nodes.txt"
