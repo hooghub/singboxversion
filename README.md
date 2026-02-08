@@ -117,7 +117,7 @@
 
 🚀 使用方法
 一键脚本
-   bash <(curl -Ls https://raw.githubusercontent.com/hooghub/singboxversion/main/sbinstall.sh)
+    bash <(curl -Ls https://raw.githubusercontent.com/hooghub/singboxversion/main/sbinstall.sh)
 
 
 需要 root 权限
