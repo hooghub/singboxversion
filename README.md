@@ -130,7 +130,7 @@
     ├── README.md
     └── bin/
         ├── VERSION         # 当前内核版本号
-        ├── sing-box-linux-amd64
+        ├── sing-box-linux-amd64/x86_64
         └── sing-box-linux-arm64
   ```
 
