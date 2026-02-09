@@ -41,11 +41,18 @@ fi
 log "[✔] Root 权限 OK"
 
 # --------- 检测公网 IP（失败不退出） ---------
-SERVER_IPV4="$(curl -4 -s ipv4.icanhazip.com 2>/dev/null || curl -4 -s ifconfig.me 2>/dev/null || true)"
-SERVER_IPV6="$(curl -6 -s ipv6.icanhazip.com 2>/dev/null || curl -6 -s ifconfig.me 2>/dev/null || true)"
+SERVER_IPV4="$(curl -4 -s --max-time 3 ipv4.icanhazip.com 2>/dev/null || curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || true)"
 
-[[ -n "${SERVER_IPV4:-}" ]] && log "[✔] 检测到公网 IPv4: $SERVER_IPV4" || log "[✖] 未检测到公网 IPv4"
-[[ -n "${SERVER_IPV6:-}" ]] && log "[✔] 检测到公网 IPv6: $SERVER_IPV6" || log "[!] 未检测到公网 IPv6（可忽略）"
+SERVER_IPV6=""
+if curl -6 -s --max-time 3 ipv6.icanhazip.com >/tmp/ipv6 2>/dev/null; then
+  SERVER_IPV6="$(cat /tmp/ipv6)"
+elif curl -6 -s --max-time 3 ifconfig.me >/tmp/ipv6 2>/dev/null; then
+  SERVER_IPV6="$(cat /tmp/ipv6)"
+fi
+rm -f /tmp/ipv6 2>/dev/null || true
+
+[[ -n "$SERVER_IPV4" ]] && echo "[✔] 检测到公网 IPv4: $SERVER_IPV4" || echo "[✖] 未检测到公网 IPv4"
+[[ -n "$SERVER_IPV6" ]] && echo "[✔] 检测到公网 IPv6: $SERVER_IPV6" || echo "[!] 未检测到公网 IPv6（可忽略）"
 
 # --------- 自动安装依赖（apt/yum/dnf + 自动去重） ---------
 REQUIRED_CMDS=(curl ss openssl dig systemctl bash socat cron ufw qrencode tar)
