@@ -12,7 +12,7 @@
 #
 # 支持模式：
 # 1) 域名 + Let's Encrypt（acme.sh standalone）
-# 2) 公网 IP + 自签固定域名 www.epple.com
+# 2) 公网 IP + 自签固定域名 kyn.com
 #
 # 协议：
 # - VLESS-TLS (TCP)   （模式2 自签默认 allowInsecure=1）
@@ -158,7 +158,7 @@ read -rp "环境检查完成 ✅  确认继续执行部署吗？(y/N): " CONFIRM
 
 # --------- 模式选择 ---------
 while true; do
-  log "\n请选择部署模式：\n1) 使用域名 + Let's Encrypt 证书\n2) 使用公网 IP + 自签固定域名 www.epple.com"
+  log "\n请选择部署模式：\n1) 使用域名 + Let's Encrypt 证书\n2) 使用公网 IP + 自签固定域名 kyn.com"
   read -rp "请输入选项 (1 或 2): " MODE
   [[ "$MODE" =~ ^[12]$ ]] && break
   log "[!] 输入错误，请重新输入 1 或 2"
