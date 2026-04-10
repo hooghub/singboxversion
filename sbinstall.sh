@@ -352,7 +352,7 @@ if [[ "$MODE" == "1" ]]; then
     log "[✔] TLS 证书申请完成"
   fi
 else
-  DOMAIN="www.epple.com"
+  DOMAIN="kyn.com"
   log "[!] 自签模式，将生成固定域名 $DOMAIN 的自签证书"
 
   SAN="DNS:$DOMAIN"
