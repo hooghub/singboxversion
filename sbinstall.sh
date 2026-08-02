@@ -261,7 +261,6 @@ install_singbox() {
     if command -v sing-box >/dev/null 2>&1; then
       SB_PATH="$(command -v sing-box)"
       log "[✔] sing-box 已存在：$($SB_PATH version | head -n1)"
-      install -m 755 "$SB_PATH" /usr/local/bin/sing-box
       return 0
     fi
 
