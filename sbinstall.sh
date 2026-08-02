@@ -525,7 +525,7 @@ fi
 # --------- 启动 ---------
 systemctl enable sing-box >/dev/null 2>&1 || true
 systemctl restart sing-box
-sleep 2
+sleep 8
 
 log "=================== 服务状态 ==================="
 systemctl --no-pager -l status sing-box || true
