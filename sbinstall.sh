@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 
 # ⚠️ 免责声明：
@@ -14,7 +13,7 @@
 # - IPv4 / IPv6 双栈
 # - IPv6-only 友好
 # - sing-box 安装：官方 deb-install.sh -> 官方 release 多源 -> raw 备用
-# - acme.sh：自有镜像优先 -> 官方 archive
+# - acme.sh：官方 archive -> 自有镜像
 # - Let's Encrypt / 自签证书
 # - VLESS-TLS
 # - VLESS-REALITY
@@ -34,15 +33,6 @@
 # - IPv6-only 客户端必须具备 IPv6 网络
 
 set -euo pipefail
-
-# ============================================================
-# 全局变量初始化
-# 防止 set -u 导致变量未定义
-# ============================================================
-
-ACME_TGZ=""
-ACME_SRC=""
-ACME_HOME="${HOME:-/root}/.acme.sh"
 
 log() {
   echo -e "$*"
@@ -164,7 +154,7 @@ if [[ ${#MISSING_CMDS[@]} -gt 0 ]]; then
           qrencode)
             add_pkg "qrencode"
             ;;
-          * )
+          *)
             add_pkg "$cmd"
             ;;
         esac
@@ -181,7 +171,7 @@ if [[ ${#MISSING_CMDS[@]} -gt 0 ]]; then
           cron)
             add_pkg "cronie"
             ;;
-          * )
+          *)
             add_pkg "$cmd"
             ;;
         esac
@@ -350,7 +340,7 @@ detect_arch() {
       echo "arm64"
       ;;
 
-    * )
+    *)
       echo ""
       ;;
 
@@ -586,11 +576,15 @@ get_random_port() {
 # ============================================================
 # 证书处理
 #
-# 修正版：
-# - ACME_TGZ / ACME_SRC / ACME_HOME 提前初始化
-# - acme.sh 只安装一次
-# - 删除原脚本重复 archive 处理
-# - IPv6-only 使用 --listen-v6
+# 这里是本次修正版最重要的地方：
+#
+# MODE=1
+#   域名 + Let's Encrypt
+#
+# MODE=2
+#   kyn.com + 自签证书
+#
+# acme.sh 只在 MODE=1 中执行
 # ============================================================
 
 if [[ "$MODE" == "1" ]]; then
@@ -631,25 +625,16 @@ if [[ "$MODE" == "1" ]]; then
   done
 
   # ----------------------------------------------------------
-  # 安装 / 检查 acme.sh
+  # 安装 acme.sh
   # ----------------------------------------------------------
 
-  ACME_HOME="${HOME:-/root}/.acme.sh"
-  ACME_TGZ="/tmp/acme.sh.tar.gz"
-  ACME_SRC="/tmp/acme.sh-src"
-
-  # ----------------------------------------------------------
-  # 如果已有 acme.sh，直接使用
-  # ----------------------------------------------------------
-
-  if [[ -x "$ACME_HOME/acme.sh" ]]; then
-
-    log "[✔] 已存在 acme.sh："
-    log "$ACME_HOME/acme.sh"
-
-  else
+  if ! command -v acme.sh >/dev/null 2>&1 &&
+     [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
 
     log ">>> 安装 acme.sh ..."
+
+    ACME_TGZ="/tmp/acme.sh.tar.gz"
+    ACME_SRC="/tmp/acme.sh-src"
 
     rm -f "$ACME_TGZ"
     rm -rf "$ACME_SRC"
@@ -660,9 +645,7 @@ if [[ "$MODE" == "1" ]]; then
 
     log ">>> 下载 acme.sh archive..."
 
-    # --------------------------------------------------------
-    # 官方源
-    # --------------------------------------------------------
+    # 官方 GitHub
 
     if download_with_fallback \
       "$ACME_TGZ" \
@@ -670,9 +653,7 @@ if [[ "$MODE" == "1" ]]; then
 
       log "[✔] acme.sh 官方 archive 下载成功"
 
-    # --------------------------------------------------------
-    # 仓库镜像
-    # --------------------------------------------------------
+    # 自有镜像
 
     elif download_with_fallback \
       "$ACME_TGZ" \
@@ -685,30 +666,9 @@ if [[ "$MODE" == "1" ]]; then
       log "[✖] acme.sh 下载失败"
       log "[✖] 官方源和仓库镜像均不可用"
 
-      rm -f "$ACME_TGZ"
       exit 1
 
     fi
-
-    # --------------------------------------------------------
-    # 检查 archive
-    # --------------------------------------------------------
-
-    if [[ ! -s "$ACME_TGZ" ]]; then
-
-      log "[✖] acme.sh archive 文件为空"
-
-      rm -f "$ACME_TGZ"
-      exit 1
-
-    fi
-
-    log "[✔] archive 下载完成："
-    ls -lh "$ACME_TGZ"
-
-    # --------------------------------------------------------
-    # 解压
-    # --------------------------------------------------------
 
     mkdir -p "$ACME_SRC"
 
@@ -717,118 +677,59 @@ if [[ "$MODE" == "1" ]]; then
       --strip-components=1; then
 
       log "[✖] acme.sh archive 解压失败"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
 
-    # --------------------------------------------------------
-    # 检查 acme.sh
-    # --------------------------------------------------------
+    if [[ ! -f "$ACME_SRC/acme.sh" ]]; then
 
-    if [[ ! -s "$ACME_SRC/acme.sh" ]]; then
-
-      log "[✖] 解压后未找到有效的 acme.sh"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
+      log "[✖] acme.sh archive 中未找到 acme.sh"
       exit 1
 
     fi
 
     chmod +x "$ACME_SRC/acme.sh"
 
-    # --------------------------------------------------------
-    # 显示版本
-    # --------------------------------------------------------
-
-    log ">>> 检测 acme.sh 版本..."
-
-    ACME_VERSION="$(
-      bash "$ACME_SRC/acme.sh" --version 2>/dev/null |
-      tail -n1 ||
-      true
-    )"
-
-    log "[✔] 下载的 acme.sh：${ACME_VERSION:-unknown}"
-
-    # --------------------------------------------------------
-    # 安装
-    # --------------------------------------------------------
-
     log ">>> 使用本地 acme.sh 源码安装..."
 
     if ! bash "$ACME_SRC/acme.sh" \
       --install \
-      --home "$ACME_HOME" \
-      --accountemail "admin@${DOMAIN}"; then
+      --home "$HOME/.acme.sh"; then
 
       log "[✖] acme.sh 安装失败"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
-
-    # --------------------------------------------------------
-    # 清理临时源码和 archive
-    # --------------------------------------------------------
 
     rm -rf "$ACME_SRC"
     rm -f "$ACME_TGZ"
 
-    # --------------------------------------------------------
-    # 检查安装结果
-    # --------------------------------------------------------
-
-    if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
-
-      log "[✖] acme.sh 安装后未找到："
-      log "$ACME_HOME/acme.sh"
-
-      exit 1
-
-    fi
-
-    log "[✔] acme.sh 安装成功："
-    "$ACME_HOME/acme.sh" --version
+    source "$HOME/.bashrc" 2>/dev/null || true
 
   fi
 
   # ----------------------------------------------------------
-  # 最终确认 acme.sh
+  # 确认 acme.sh
   # ----------------------------------------------------------
 
-  if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
+  if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
 
-    log "[✖] acme.sh 不可执行："
-    log "$ACME_HOME/acme.sh"
+    log "[✖] acme.sh 安装后未找到："
+    log "$HOME/.acme.sh/acme.sh"
 
     exit 1
-
   fi
-
-  "$ACME_HOME/acme.sh" --version || {
-    log "[✖] acme.sh 无法运行"
-    exit 1
-  }
 
   # ----------------------------------------------------------
   # 设置 Let's Encrypt
   # ----------------------------------------------------------
 
-  "$ACME_HOME/acme.sh" \
+  "$HOME/.acme.sh/acme.sh" \
     --set-default-ca \
     --server letsencrypt
 
-  LE_CERT_PATH="$ACME_HOME/${DOMAIN}_ecc/fullchain.cer"
-  LE_KEY_PATH="$ACME_HOME/${DOMAIN}_ecc/${DOMAIN}.key"
+  LE_CERT_PATH="$HOME/.acme.sh/${DOMAIN}_ecc/fullchain.cer"
+  LE_KEY_PATH="$HOME/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.key"
 
   # ----------------------------------------------------------
   # 已存在证书
@@ -848,9 +749,7 @@ if [[ "$MODE" == "1" ]]; then
       "$CERT_DIR/privkey.pem"
 
     chmod 644 \
-      "$CERT_DIR/fullchain.pem"
-
-    chmod 600 \
+      "$CERT_DIR/fullchain.pem" \
       "$CERT_DIR/privkey.pem"
 
   else
@@ -861,29 +760,15 @@ if [[ "$MODE" == "1" ]]; then
 
     log ">>> 申请新的 Let's Encrypt TLS 证书"
 
-    ACME_LISTEN_ARGS=()
-
-    # --------------------------------------------------------
-    # IPv4 优先
-    # --------------------------------------------------------
+    USE_LISTEN=""
 
     if [[ -n "${SERVER_IPV4:-}" ]]; then
 
-      log "[✔] 检测到公网 IPv4"
-      log "[>] 使用 IPv4 standalone 验证"
-
-      ACME_LISTEN_ARGS+=(--listen-v4)
-
-    # --------------------------------------------------------
-    # IPv6-only
-    # --------------------------------------------------------
+      USE_LISTEN="--listen-v4"
 
     elif [[ -n "${SERVER_IPV6:-}" ]]; then
 
-      log "[✔] 检测到 IPv6-only VPS"
-      log "[>] 使用 IPv6 standalone 验证"
-
-      ACME_LISTEN_ARGS+=(--listen-v6)
+      USE_LISTEN="--listen-v6"
 
     else
 
@@ -894,15 +779,15 @@ if [[ "$MODE" == "1" ]]; then
 
     fi
 
-    "$ACME_HOME/acme.sh" \
+    "$HOME/.acme.sh/acme.sh" \
       --issue \
       -d "$DOMAIN" \
       --standalone \
-      "${ACME_LISTEN_ARGS[@]}" \
+      $USE_LISTEN \
       --keylength ec-256 \
       --force
 
-    "$ACME_HOME/acme.sh" \
+    "$HOME/.acme.sh/acme.sh" \
       --install-cert \
       -d "$DOMAIN" \
       --ecc \
@@ -911,9 +796,7 @@ if [[ "$MODE" == "1" ]]; then
       --force
 
     chmod 644 \
-      "$CERT_DIR/fullchain.pem"
-
-    chmod 600 \
+      "$CERT_DIR/fullchain.pem" \
       "$CERT_DIR/privkey.pem"
 
     log "[✔] TLS 证书申请完成"
@@ -952,9 +835,7 @@ else
     -addext "subjectAltName = $SAN"
 
   chmod 644 \
-    "$CERT_DIR/fullchain.pem"
-
-  chmod 600 \
+    "$CERT_DIR/fullchain.pem" \
     "$CERT_DIR/privkey.pem"
 
   log "[✔] 自签证书生成完成"
@@ -992,7 +873,6 @@ fi
 
 # ============================================================
 # IPv6 独立端口
-# 保持原脚本设计
 # ============================================================
 
 VLESS6_PORT="$(get_random_port)"
@@ -1047,7 +927,6 @@ REALITY_SHORT_ID="$(
 
 # ============================================================
 # 生成 sing-box 配置
-# 保持原配置结构
 # ============================================================
 
 mkdir -p /etc/sing-box
@@ -1548,4 +1427,3 @@ log "REALITY ShortID：$REALITY_SHORT_ID"
 
 log ""
 log "订阅文件：$SUB_FILE"
-```
