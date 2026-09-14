@@ -624,7 +624,7 @@ if [[ "$MODE" == "1" ]]; then
 
   done
 
-   # ----------------------------------------------------------
+     # ----------------------------------------------------------
   # 安装 acme.sh
   # ----------------------------------------------------------
 
@@ -690,7 +690,7 @@ if [[ "$MODE" == "1" ]]; then
     fi
 
     # --------------------------------------------------------
-    # 检查源码
+    # 检查 acme.sh
     # --------------------------------------------------------
 
     if [[ ! -f "$ACME_SRC/acme.sh" ]]; then
@@ -702,55 +702,87 @@ if [[ "$MODE" == "1" ]]; then
 
     chmod +x "$ACME_SRC/acme.sh"
 
-    log ">>> 检测到 acme.sh："
+    log ">>> 检测 acme.sh 版本..."
 
-    if ! bash "$ACME_SRC/acme.sh" --version; then
+    ACME_VERSION="$(
+      bash "$ACME_SRC/acme.sh" --version 2>/dev/null |
+      tail -n1
+    )"
 
-      log "[✖] acme.sh 本体执行失败"
+    if [[ -z "$ACME_VERSION" ]]; then
+
+      log "[✖] 无法读取 acme.sh 版本"
       exit 1
 
     fi
 
+    log "[✔] 下载的 acme.sh：$ACME_VERSION"
+
     # --------------------------------------------------------
-    # 关键修复
+    # 直接安装 acme.sh
     #
-    # acme.sh 的 --install 会从当前工作目录寻找
-    # acme.sh 文件。
+    # 不使用 acme.sh --install。
     #
-    # 因此必须先进入源码目录，再执行安装。
+    # 原因：
+    # 当前 archive 版 installer 内部使用：
+    #
+    #   cp acme.sh ...
+    #
+    # 它会依赖当前工作目录中的 acme.sh。
+    #
+    # 因此这里直接复制已经验证正常的
+    # acme.sh 主程序，避免 installer 的路径问题。
     # --------------------------------------------------------
 
     log ">>> 使用本地 acme.sh 源码安装..."
 
-    pushd "$ACME_SRC" >/dev/null
+    ACME_HOME="$HOME/.acme.sh"
 
-    if ! bash ./acme.sh \
-      --install \
-      --home "$HOME/.acme.sh"; then
+    mkdir -p "$ACME_HOME"
 
-      popd >/dev/null
+    cp \
+      "$ACME_SRC/acme.sh" \
+      "$ACME_HOME/acme.sh"
 
-      log "[✖] acme.sh 安装失败"
-      exit 1
+    chmod 700 \
+      "$ACME_HOME/acme.sh"
 
-    fi
+    # --------------------------------------------------------
+    # 初始化 acme.sh home
+    # --------------------------------------------------------
 
-    popd >/dev/null
+    export LE_WORKING_DIR="$ACME_HOME"
+
+    # --------------------------------------------------------
+    # 建立全局命令
+    # --------------------------------------------------------
+
+    ln -sf \
+      "$ACME_HOME/acme.sh" \
+      /usr/local/bin/acme.sh
 
     # --------------------------------------------------------
     # 检查安装结果
     # --------------------------------------------------------
 
-    if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+    if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
 
       log "[✖] acme.sh 安装后未找到："
-      log "$HOME/.acme.sh/acme.sh"
+      log "$ACME_HOME/acme.sh"
 
       exit 1
 
     fi
 
-    log "[✔] acme.sh 安装完成"
+    if ! "$ACME_HOME/acme.sh" --version >/dev/null 2>&1; then
+
+      log "[✖] 安装后的 acme.sh 无法执行"
+      exit 1
+
+    fi
+
+    log "[✔] acme.sh 安装完成："
+    "$ACME_HOME/acme.sh" --version
 
     # --------------------------------------------------------
     # 清理临时文件
@@ -762,6 +794,7 @@ if [[ "$MODE" == "1" ]]; then
     source "$HOME/.bashrc" 2>/dev/null || true
 
   fi
+
 
 
     # --------------------------------------------------------
