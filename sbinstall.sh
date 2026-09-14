@@ -624,13 +624,12 @@ if [[ "$MODE" == "1" ]]; then
 
   done
 
-  # ----------------------------------------------------------
+   # ----------------------------------------------------------
   # 安装 acme.sh
   # ----------------------------------------------------------
 
-  ACME_HOME="$HOME/.acme.sh"
-
-  if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
+  if ! command -v acme.sh >/dev/null 2>&1 &&
+     [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
 
     log ">>> 安装 acme.sh ..."
 
@@ -640,39 +639,130 @@ if [[ "$MODE" == "1" ]]; then
     rm -f "$ACME_TGZ"
     rm -rf "$ACME_SRC"
 
-    # 官方 GitHub archive
     ACME_OFFICIAL_URL="https://github.com/acmesh-official/acme.sh/archive/master.tar.gz"
 
-    # 已验证可用的仓库镜像
     ACME_MIRROR_URL="https://raw.githubusercontent.com/hooghub/singboxversion/main/acme.sh/master.tar.gz"
 
     log ">>> 下载 acme.sh archive..."
 
     # --------------------------------------------------------
-    # 自有镜像优先
-    # 官方 GitHub 备用
+    # 官方 GitHub
     # --------------------------------------------------------
 
     if download_with_fallback \
-      "$ACME_TGZ" \
-      "$ACME_MIRROR_URL"; then
-
-      log "[✔] acme.sh 仓库镜像下载成功"
-
-    elif download_with_fallback \
       "$ACME_TGZ" \
       "$ACME_OFFICIAL_URL"; then
 
       log "[✔] acme.sh 官方 archive 下载成功"
 
+    # --------------------------------------------------------
+    # 自有镜像
+    # --------------------------------------------------------
+
+    elif download_with_fallback \
+      "$ACME_TGZ" \
+      "$ACME_MIRROR_URL"; then
+
+      log "[✔] acme.sh 仓库镜像下载成功"
+
     else
 
       log "[✖] acme.sh 下载失败"
-      log "[✖] 仓库镜像和官方源均不可用"
+      log "[✖] 官方源和仓库镜像均不可用"
 
       exit 1
 
     fi
+
+    # --------------------------------------------------------
+    # 解压
+    # --------------------------------------------------------
+
+    mkdir -p "$ACME_SRC"
+
+    if ! tar -xzf "$ACME_TGZ" \
+      -C "$ACME_SRC" \
+      --strip-components=1; then
+
+      log "[✖] acme.sh archive 解压失败"
+      exit 1
+
+    fi
+
+    # --------------------------------------------------------
+    # 检查源码
+    # --------------------------------------------------------
+
+    if [[ ! -f "$ACME_SRC/acme.sh" ]]; then
+
+      log "[✖] acme.sh archive 中未找到 acme.sh"
+      exit 1
+
+    fi
+
+    chmod +x "$ACME_SRC/acme.sh"
+
+    log ">>> 检测到 acme.sh："
+
+    if ! bash "$ACME_SRC/acme.sh" --version; then
+
+      log "[✖] acme.sh 本体执行失败"
+      exit 1
+
+    fi
+
+    # --------------------------------------------------------
+    # 关键修复
+    #
+    # acme.sh 的 --install 会从当前工作目录寻找
+    # acme.sh 文件。
+    #
+    # 因此必须先进入源码目录，再执行安装。
+    # --------------------------------------------------------
+
+    log ">>> 使用本地 acme.sh 源码安装..."
+
+    pushd "$ACME_SRC" >/dev/null
+
+    if ! bash ./acme.sh \
+      --install \
+      --home "$HOME/.acme.sh"; then
+
+      popd >/dev/null
+
+      log "[✖] acme.sh 安装失败"
+      exit 1
+
+    fi
+
+    popd >/dev/null
+
+    # --------------------------------------------------------
+    # 检查安装结果
+    # --------------------------------------------------------
+
+    if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+
+      log "[✖] acme.sh 安装后未找到："
+      log "$HOME/.acme.sh/acme.sh"
+
+      exit 1
+
+    fi
+
+    log "[✔] acme.sh 安装完成"
+
+    # --------------------------------------------------------
+    # 清理临时文件
+    # --------------------------------------------------------
+
+    rm -rf "$ACME_SRC"
+    rm -f "$ACME_TGZ"
+
+    source "$HOME/.bashrc" 2>/dev/null || true
+
+  fi
+
 
     # --------------------------------------------------------
     # 检查 archive
