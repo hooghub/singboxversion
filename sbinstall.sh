@@ -323,12 +323,35 @@ if [[ "$MODE" == "1" ]]; then
   rm -f "$ACME_TGZ"
   rm -rf "$ACME_SRC"
 
-  # acme.sh 官方 archive：IPv6 优先，失败后 IPv4
-  if ! download_with_fallback "$ACME_TGZ" \
-      "https://github.com/acmesh-official/acme.sh/archive/master.tar.gz"; then
-    log "[✖] acme.sh 下载失败：IPv6 和 IPv4 均不可用"
+    # acme.sh archive 下载策略：
+  # 1. 官方 GitHub：IPv6 -> IPv4
+  # 2. 自己的 singboxversion 仓库镜像：IPv6 -> IPv4
+  # 3. 两边都失败才退出
+
+  ACME_OFFICIAL_URL="https://github.com/acmesh-official/acme.sh/archive/master.tar.gz"
+  ACME_MIRROR_URL="https://raw.githubusercontent.com/hooghub/singboxversion/main/acme.sh/master.tar.gz"
+
+  log ">>> 下载 acme.sh archive..."
+
+  # 第一优先：官方 GitHub
+  if download_with_fallback "$ACME_TGZ" \
+      "$ACME_OFFICIAL_URL"; then
+
+    log "[✔] acme.sh 官方 archive 下载成功"
+
+  # 第二优先：自己的仓库镜像
+  elif download_with_fallback "$ACME_TGZ" \
+      "$ACME_MIRROR_URL"; then
+
+    log "[✔] acme.sh 仓库镜像下载成功"
+
+  else
+
+    log "[✖] acme.sh 下载失败：官方源和仓库镜像的 IPv6/IPv4 均不可用"
     exit 1
+
   fi
+
 
   mkdir -p "$ACME_SRC"
 
