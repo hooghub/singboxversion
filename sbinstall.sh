@@ -314,11 +314,58 @@ if [[ "$MODE" == "1" ]]; then
     break
   done
 
-  if ! command -v acme.sh >/dev/null 2>&1; then
-    log ">>> 安装 acme.sh ..."
-    curl -fsSL https://get.acme.sh | sh
-    source ~/.bashrc || true
+  if ! command -v acme.sh >/dev/null 2>&1 && [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+  log ">>> 安装 acme.sh ..."
+
+  ACME_TGZ="/tmp/acme.sh.tar.gz"
+  ACME_SRC="/tmp/acme.sh-src"
+
+  rm -f "$ACME_TGZ"
+  rm -rf "$ACME_SRC"
+
+  # acme.sh 官方 archive：IPv6 优先，失败后 IPv4
+  if ! download_with_fallback "$ACME_TGZ" \
+      "https://github.com/acmesh-official/acme.sh/archive/master.tar.gz"; then
+    log "[✖] acme.sh 下载失败：IPv6 和 IPv4 均不可用"
+    exit 1
   fi
+
+  mkdir -p "$ACME_SRC"
+
+  if ! tar -xzf "$ACME_TGZ" \
+      -C "$ACME_SRC" \
+      --strip-components=1; then
+    log "[✖] acme.sh archive 解压失败"
+    exit 1
+  fi
+
+  if [[ ! -f "$ACME_SRC/acme.sh" ]]; then
+    log "[✖] acme.sh archive 中未找到 acme.sh"
+    exit 1
+  fi
+
+  chmod +x "$ACME_SRC/acme.sh"
+
+  # 使用已经下载到本地的源码安装，
+  # 避免 get.acme.sh installer 再次访问 GitHub
+  if ! bash "$ACME_SRC/acme.sh" \
+      --install \
+      --home "$HOME/.acme.sh"; then
+    log "[✖] acme.sh 安装失败"
+    exit 1
+  fi
+
+  rm -rf "$ACME_SRC"
+  rm -f "$ACME_TGZ"
+
+  source ~/.bashrc 2>/dev/null || true
+fi
+
+if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+  log "[✖] acme.sh 安装后未找到：$HOME/.acme.sh/acme.sh"
+  exit 1
+fi
+
   ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
   LE_CERT_PATH="$HOME/.acme.sh/${DOMAIN}_ecc/fullchain.cer"
