@@ -1,1 +1,72 @@
+name: Update acme.sh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  update-acme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download acme.sh
+        run: |
+          set -e
+
+          rm -rf /tmp/acme.sh
+          mkdir -p /tmp/acme.sh
+
+          echo ">>> Clone official acme.sh..."
+          git clone --depth 1 \
+            https://github.com/acmesh-official/acme.sh.git \
+            /tmp/acme.sh
+
+          echo ">>> Remove Git metadata..."
+          rm -rf /tmp/acme.sh/.git
+
+          echo ">>> Create archive..."
+          mkdir -p acme.sh
+
+          tar -czf acme.sh/master.tar.gz \
+            -C /tmp \
+            acme.sh
+
+      - name: Verify archive
+        run: |
+          set -e
+
+          test -s acme.sh/master.tar.gz
+
+          echo ">>> Archive contents:"
+          tar -tzf acme.sh/master.tar.gz | head -20
+
+          echo ">>> Verify acme.sh..."
+          tar -tzf acme.sh/master.tar.gz \
+            | grep -q "^acme.sh/acme.sh$"
+
+          echo "acme.sh archive OK"
+
+      - name: Commit update
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add acme.sh/master.tar.gz
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+
+          git commit -m "chore: update acme.sh"
+          git push
 
