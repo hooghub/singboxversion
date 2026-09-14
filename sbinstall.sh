@@ -692,13 +692,15 @@ if [[ "$MODE" == "1" ]]; then
 
     log ">>> 使用本地 acme.sh 源码安装..."
 
-    if ! bash "$ACME_SRC/acme.sh" \
-      --install \
-      --home "$HOME/.acme.sh"; then
+if ! (
+  cd "$ACME_SRC"
+  ./acme.sh \
+    --install \
+    --home "$HOME/.acme.sh"
+); then
 
-      log "[✖] acme.sh 安装失败"
-      exit 1
-
+  log "[✖] acme.sh 安装失败"
+  exit 1
     fi
 
     rm -rf "$ACME_SRC"
