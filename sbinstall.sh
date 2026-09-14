@@ -628,13 +628,13 @@ if [[ "$MODE" == "1" ]]; then
   # 安装 acme.sh
   # ----------------------------------------------------------
 
+  ACME_TGZ="/tmp/acme.sh.tar.gz"
+  ACME_SRC="/tmp/acme.sh-src"
+
   if ! command -v acme.sh >/dev/null 2>&1 &&
      [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
 
     log ">>> 安装 acme.sh ..."
-
-    ACME_TGZ="/tmp/acme.sh.tar.gz"
-    ACME_SRC="/tmp/acme.sh-src"
 
     rm -f "$ACME_TGZ"
     rm -rf "$ACME_SRC"
@@ -667,15 +667,12 @@ if [[ "$MODE" == "1" ]]; then
     fi
 
     # --------------------------------------------------------
-    # 检查下载文件
+    # 检查 archive
     # --------------------------------------------------------
 
     if [[ ! -s "$ACME_TGZ" ]]; then
 
       log "[✖] acme.sh archive 文件为空"
-
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
@@ -694,10 +691,6 @@ if [[ "$MODE" == "1" ]]; then
       --strip-components=1; then
 
       log "[✖] acme.sh archive 解压失败"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
@@ -709,10 +702,6 @@ if [[ "$MODE" == "1" ]]; then
     if [[ ! -s "$ACME_SRC/acme.sh" ]]; then
 
       log "[✖] 解压后未找到有效的 acme.sh"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
@@ -733,10 +722,6 @@ if [[ "$MODE" == "1" ]]; then
     if [[ -z "$ACME_VERSION" ]]; then
 
       log "[✖] 无法读取 acme.sh 版本"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
@@ -745,9 +730,6 @@ if [[ "$MODE" == "1" ]]; then
 
     # --------------------------------------------------------
     # 直接安装
-    #
-    # 不执行 --install，避免 installer 的
-    # "cp: cannot stat 'acme.sh'" 问题。
     # --------------------------------------------------------
 
     log ">>> 使用本地 acme.sh 源码安装..."
@@ -762,10 +744,6 @@ if [[ "$MODE" == "1" ]]; then
 
     chmod 700 \
       "$ACME_HOME/acme.sh"
-
-    # --------------------------------------------------------
-    # 设置工作目录
-    # --------------------------------------------------------
 
     export LE_WORKING_DIR="$ACME_HOME"
 
@@ -786,9 +764,6 @@ if [[ "$MODE" == "1" ]]; then
       log "[✖] acme.sh 安装后未找到："
       log "$ACME_HOME/acme.sh"
 
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
@@ -796,24 +771,12 @@ if [[ "$MODE" == "1" ]]; then
     if ! "$ACME_HOME/acme.sh" --version >/dev/null 2>&1; then
 
       log "[✖] 安装后的 acme.sh 无法执行"
-
-      rm -rf "$ACME_SRC"
-      rm -f "$ACME_TGZ"
-
       exit 1
 
     fi
 
     log "[✔] acme.sh 安装完成："
     "$ACME_HOME/acme.sh" --version
-
-    # --------------------------------------------------------
-    # 注意：
-    # 不删除 ACME_TGZ。
-    #
-    # 后续脚本如果还需要检查 archive 文件，
-    # 保留它即可。
-    # --------------------------------------------------------
 
     rm -rf "$ACME_SRC"
 
