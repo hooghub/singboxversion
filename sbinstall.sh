@@ -13,7 +13,7 @@
 # - IPv4 / IPv6 双栈
 # - IPv6-only 友好
 # - sing-box 安装：官方 deb-install.sh -> 官方 release 多源 -> raw 备用
-# - acme.sh：官方 archive -> 自有镜像
+# - acme.sh：自有镜像优先 -> 官方 archive
 # - Let's Encrypt / 自签证书
 # - VLESS-TLS
 # - VLESS-REALITY
@@ -628,8 +628,9 @@ if [[ "$MODE" == "1" ]]; then
   # 安装 acme.sh
   # ----------------------------------------------------------
 
-  if ! command -v acme.sh >/dev/null 2>&1 &&
-     [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+  ACME_HOME="$HOME/.acme.sh"
+
+  if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
 
     log ">>> 安装 acme.sh ..."
 
@@ -639,36 +640,58 @@ if [[ "$MODE" == "1" ]]; then
     rm -f "$ACME_TGZ"
     rm -rf "$ACME_SRC"
 
+    # 官方 GitHub archive
     ACME_OFFICIAL_URL="https://github.com/acmesh-official/acme.sh/archive/master.tar.gz"
 
+    # 已验证可用的仓库镜像
     ACME_MIRROR_URL="https://raw.githubusercontent.com/hooghub/singboxversion/main/acme.sh/master.tar.gz"
 
     log ">>> 下载 acme.sh archive..."
 
-    # 官方 GitHub
+    # --------------------------------------------------------
+    # 自有镜像优先
+    # 官方 GitHub 备用
+    # --------------------------------------------------------
 
     if download_with_fallback \
-      "$ACME_TGZ" \
-      "$ACME_OFFICIAL_URL"; then
-
-      log "[✔] acme.sh 官方 archive 下载成功"
-
-    # 自有镜像
-
-    elif download_with_fallback \
       "$ACME_TGZ" \
       "$ACME_MIRROR_URL"; then
 
       log "[✔] acme.sh 仓库镜像下载成功"
 
+    elif download_with_fallback \
+      "$ACME_TGZ" \
+      "$ACME_OFFICIAL_URL"; then
+
+      log "[✔] acme.sh 官方 archive 下载成功"
+
     else
 
       log "[✖] acme.sh 下载失败"
-      log "[✖] 官方源和仓库镜像均不可用"
+      log "[✖] 仓库镜像和官方源均不可用"
 
       exit 1
 
     fi
+
+    # --------------------------------------------------------
+    # 检查 archive
+    # --------------------------------------------------------
+
+    if [[ ! -s "$ACME_TGZ" ]]; then
+
+      log "[✖] acme.sh archive 文件为空"
+
+      exit 1
+
+    fi
+
+    log "[✔] archive 下载完成："
+    ls -lh "$ACME_TGZ"
+
+    # --------------------------------------------------------
+    # 解压
+    # --------------------------------------------------------
 
     mkdir -p "$ACME_SRC"
 
@@ -677,34 +700,90 @@ if [[ "$MODE" == "1" ]]; then
       --strip-components=1; then
 
       log "[✖] acme.sh archive 解压失败"
+
+      rm -rf "$ACME_SRC"
+      rm -f "$ACME_TGZ"
+
       exit 1
 
     fi
 
+    # --------------------------------------------------------
+    # 检查 acme.sh
+    # --------------------------------------------------------
+
     if [[ ! -f "$ACME_SRC/acme.sh" ]]; then
 
-      log "[✖] acme.sh archive 中未找到 acme.sh"
+      log "[✖] archive 中未找到 acme.sh"
+
+      rm -rf "$ACME_SRC"
+      rm -f "$ACME_TGZ"
+
       exit 1
 
     fi
 
     chmod +x "$ACME_SRC/acme.sh"
 
+    # --------------------------------------------------------
+    # 显示版本
+    # --------------------------------------------------------
+
+    log ">>> 检测 acme.sh 版本..."
+
+    ACME_VERSION="$(
+      bash "$ACME_SRC/acme.sh" --version |
+      tail -n1 ||
+      true
+    )"
+
+    log "[✔] 下载的 acme.sh：$ACME_VERSION"
+
+    # --------------------------------------------------------
+    # 安装
+    # --------------------------------------------------------
+
     log ">>> 使用本地 acme.sh 源码安装..."
 
     if ! bash "$ACME_SRC/acme.sh" \
       --install \
-      --home "$HOME/.acme.sh"; then
+      --home "$ACME_HOME"; then
 
       log "[✖] acme.sh 安装失败"
+
+      rm -rf "$ACME_SRC"
+      rm -f "$ACME_TGZ"
+
       exit 1
 
     fi
 
+    # --------------------------------------------------------
+    # 清理临时文件
+    # --------------------------------------------------------
+
     rm -rf "$ACME_SRC"
     rm -f "$ACME_TGZ"
 
-    source "$HOME/.bashrc" 2>/dev/null || true
+    # --------------------------------------------------------
+    # 检查安装结果
+    # --------------------------------------------------------
+
+    if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
+
+      log "[✖] acme.sh 安装后未找到："
+      log "$ACME_HOME/acme.sh"
+
+      exit 1
+
+    fi
+
+    log "[✔] acme.sh 安装成功"
+
+  else
+
+    log "[✔] 已存在 acme.sh："
+    log "$ACME_HOME/acme.sh"
 
   fi
 
@@ -712,24 +791,30 @@ if [[ "$MODE" == "1" ]]; then
   # 确认 acme.sh
   # ----------------------------------------------------------
 
-  if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+  if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
 
-    log "[✖] acme.sh 安装后未找到："
-    log "$HOME/.acme.sh/acme.sh"
+    log "[✖] acme.sh 不可执行："
+    log "$ACME_HOME/acme.sh"
 
     exit 1
+
   fi
+
+  "$ACME_HOME/acme.sh" --version || {
+    log "[✖] acme.sh 无法运行"
+    exit 1
+  }
 
   # ----------------------------------------------------------
   # 设置 Let's Encrypt
   # ----------------------------------------------------------
 
-  "$HOME/.acme.sh/acme.sh" \
+  "$ACME_HOME/acme.sh" \
     --set-default-ca \
     --server letsencrypt
 
-  LE_CERT_PATH="$HOME/.acme.sh/${DOMAIN}_ecc/fullchain.cer"
-  LE_KEY_PATH="$HOME/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.key"
+  LE_CERT_PATH="$ACME_HOME/${DOMAIN}_ecc/fullchain.cer"
+  LE_KEY_PATH="$ACME_HOME/${DOMAIN}_ecc/${DOMAIN}.key"
 
   # ----------------------------------------------------------
   # 已存在证书
@@ -749,7 +834,9 @@ if [[ "$MODE" == "1" ]]; then
       "$CERT_DIR/privkey.pem"
 
     chmod 644 \
-      "$CERT_DIR/fullchain.pem" \
+      "$CERT_DIR/fullchain.pem"
+
+    chmod 600 \
       "$CERT_DIR/privkey.pem"
 
   else
@@ -779,7 +866,7 @@ if [[ "$MODE" == "1" ]]; then
 
     fi
 
-    "$HOME/.acme.sh/acme.sh" \
+    "$ACME_HOME/acme.sh" \
       --issue \
       -d "$DOMAIN" \
       --standalone \
@@ -787,7 +874,7 @@ if [[ "$MODE" == "1" ]]; then
       --keylength ec-256 \
       --force
 
-    "$HOME/.acme.sh/acme.sh" \
+    "$ACME_HOME/acme.sh" \
       --install-cert \
       -d "$DOMAIN" \
       --ecc \
@@ -796,7 +883,9 @@ if [[ "$MODE" == "1" ]]; then
       --force
 
     chmod 644 \
-      "$CERT_DIR/fullchain.pem" \
+      "$CERT_DIR/fullchain.pem"
+
+    chmod 600 \
       "$CERT_DIR/privkey.pem"
 
     log "[✔] TLS 证书申请完成"
@@ -835,7 +924,9 @@ else
     -addext "subjectAltName = $SAN"
 
   chmod 644 \
-    "$CERT_DIR/fullchain.pem" \
+    "$CERT_DIR/fullchain.pem"
+
+  chmod 600 \
     "$CERT_DIR/privkey.pem"
 
   log "[✔] 自签证书生成完成"
