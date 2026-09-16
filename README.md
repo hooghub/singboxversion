@@ -199,6 +199,7 @@ Q3：模式 2 为什么要 insecure=true？
 
 这是一个为“GitHub 被墙 + IPv6-only VPS”专门打造的 sing-box 一键部署方案，
 外部源能用就用，不能用就直接吃自家仓库内核，稳定、可控、可维护。
+
 ⚠️ 免责声明（Disclaimer）
 
 本项目仅用于 学习、研究和技术测试 sing-box 相关功能。
