@@ -898,10 +898,10 @@ HY2_PASS="$(
 # ============================================================
 
 read -rp \
-  "REALITY 伪装站点(Handshake server) [默认: www.speedtest.net]: " \
+  "REALITY 伪装站点(Handshake server) [默认: www.yahoo.com]: " \
   REALITY_SERVER
 
-REALITY_SERVER="${REALITY_SERVER:-www.speedtest.net}"
+REALITY_SERVER="${REALITY_SERVER:-www.yahoo.com}"
 
 read -rp \
   "REALITY SNI(server_name) [默认同上]: " \
@@ -1081,9 +1081,11 @@ log "[✔] sing-box 配置检查通过"
 # systemd 服务
 # ============================================================
 
-if [[ ! -f /etc/systemd/system/sing-box.service ]]; then
+# 1. 探测真实的 sing-box 路径
+REAL_BIN=$(command -v sing-box || echo "/usr/local/bin/sing-box")
 
-  cat > /etc/systemd/system/sing-box.service <<'EOF'
+# 2. 直接覆盖并生成最新的服务文件（注意：EOF 不要带单引号）
+cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
 Description=sing-box service
 After=network-online.target
@@ -1091,7 +1093,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+ExecStart=${REAL_BIN} run -c /etc/sing-box/config.json
 Restart=on-failure
 RestartSec=2s
 LimitNOFILE=1048576
