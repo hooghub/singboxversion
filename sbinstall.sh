@@ -1102,8 +1102,6 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-fi
-
 systemctl daemon-reload
 
 # ============================================================
