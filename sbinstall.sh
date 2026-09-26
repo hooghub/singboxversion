@@ -850,7 +850,7 @@ fi
 # ============================================================
 
 read -rp \
-  "请输入 VLESS TCP TLS 端口 (直接回车随机): " \
+  "请输入 VLESS TCP TLS 端口 (随机端口直接回车): " \
   VLESS_PORT
 
 if [[ -z "${VLESS_PORT:-}" ]]; then
@@ -858,7 +858,7 @@ if [[ -z "${VLESS_PORT:-}" ]]; then
 fi
 
 read -rp \
-  "请输入 VLESS REALITY 端口 (直接回车随机): " \
+  "请输入 VLESS REALITY 端口 (随机端口直接回车): " \
   VLESS_R_PORT
 
 if [[ -z "${VLESS_R_PORT:-}" ]]; then
@@ -866,7 +866,7 @@ if [[ -z "${VLESS_R_PORT:-}" ]]; then
 fi
 
 read -rp \
-  "请输入 Hysteria2 UDP 端口 (直接回车随机): " \
+  "请输入 Hysteria2 UDP 端口 (随机端口直接回车): " \
   HY2_PORT
 
 if [[ -z "${HY2_PORT:-}" ]]; then
