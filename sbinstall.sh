@@ -850,26 +850,26 @@ fi
 # ============================================================
 
 read -rp \
-  "请输入 VLESS TCP TLS 端口 (默认 443, 输入0随机): " \
+  "请输入 VLESS TCP TLS 端口 (直接回车随机): " \
   VLESS_PORT
 
-if [[ -z "${VLESS_PORT:-}" || "$VLESS_PORT" == "0" ]]; then
+if [[ -z "${VLESS_PORT:-}" ]]; then
   VLESS_PORT="$(get_random_port)"
 fi
 
 read -rp \
-  "请输入 VLESS REALITY 端口 (默认 0 随机): " \
+  "请输入 VLESS REALITY 端口 (直接回车随机): " \
   VLESS_R_PORT
 
-if [[ -z "${VLESS_R_PORT:-}" || "$VLESS_R_PORT" == "0" ]]; then
+if [[ -z "${VLESS_R_PORT:-}" ]]; then
   VLESS_R_PORT="$(get_random_port)"
 fi
 
 read -rp \
-  "请输入 Hysteria2 UDP 端口 (默认 8443, 输入0随机): " \
+  "请输入 Hysteria2 UDP 端口 (直接回车随机): " \
   HY2_PORT
 
-if [[ -z "${HY2_PORT:-}" || "$HY2_PORT" == "0" ]]; then
+if [[ -z "${HY2_PORT:-}" ]]; then
   HY2_PORT="$(get_random_port)"
 fi
 
